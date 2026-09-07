@@ -2,17 +2,30 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#99000000">
 
     <TextView
-        android:id="@+id/testText"
+        android:id="@+id/listeningText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Bixby Voice"
-        android:textSize="24sp"
+        android:layout_marginBottom="24dp"
+        android:text="I'm listening..."
+        android:textColor="@android:color/white"
+        android:textSize="20sp"
+        app:layout_constraintBottom_toTopOf="@id/bixbyOrb"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <ImageView
+        android:id="@+id/bixbyOrb"
+        android:layout_width="180dp"
+        android:layout_height="180dp"
+        android:layout_marginBottom="48dp"
+        android:contentDescription="Bixby voice orb"
+        android:src="@drawable/bixby_orb"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
