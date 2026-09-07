@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             lifecycleScope.launch {
                 val response = BixbyBrain.askQuestion(
                     "Hello, who are you and what can you do?",
-                    "YOUR_API_KEY_HERE"
+                    "AQ.Ab8RN6JJHiKCeWx2q_T9IAlStQSBwwWkgpd8PzbAtDe_Yd9IMQ"
                 )
 
                 withContext(Dispatchers.Main) {
