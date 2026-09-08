@@ -1,13 +1,17 @@
 package com.bixby.assistant
 
+import android.Manifest
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,6 +26,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var textToSpeech: TextToSpeech? = null
     private lateinit var listeningText: TextView
 
+    private val requestAudioPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            listeningText.text = "I'm listening..."
+        } else {
+            listeningText.text = "Microphone permission is required for voice input."
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -30,6 +44,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         listeningText = findViewById(R.id.listeningText)
 
         textToSpeech = TextToSpeech(this, this)
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
 
         orbAnimator = ObjectAnimator.ofFloat(bixbyOrb, "scaleX", 1.0f, 1.2f).apply {
             duration = 800L
