@@ -11,7 +11,7 @@ object BixbyBrain {
                 // Using the standard Generative AI SDK with simple API Key
                 val generativeModel = GenerativeModel(
                     modelName = "gemini-1.5-flash",
-                    apiKey = apiKey
+                    apiKey = "AQ.Ab8RN6LQNtoocWYSlahjBhvoavODHtDr8znD1cQm0SWM3zgygw"
                 )
                 val response = generativeModel.generateContent(prompt)
                 response.text ?: "I am sorry, I couldn't process that."
