@@ -24,17 +24,17 @@ class BixbyAccessibilityService : AccessibilityService() {
         }
 
         fun performBack(): Boolean {
-            return try { instance?.safeGlobalAction(GLOBAL_ACTION_BACK) == true }
+            return try { instance?.safeGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) == true }
             catch (e: Exception) { Log.e(TAG, "Back action failed", e); false }
         }
 
         fun performHome(): Boolean {
-            return try { instance?.safeGlobalAction(GLOBAL_ACTION_HOME) == true }
+            return try { instance?.safeGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) == true }
             catch (e: Exception) { Log.e(TAG, "Home action failed", e); false }
         }
 
         fun performRecents(): Boolean {
-            return try { instance?.safeGlobalAction(GLOBAL_ACTION_RECENTS) == true }
+            return try { instance?.safeGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS) == true }
             catch (e: Exception) { Log.e(TAG, "Recents action failed", e); false }
         }
     }
