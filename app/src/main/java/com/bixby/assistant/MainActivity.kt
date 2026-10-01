@@ -11,6 +11,8 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.speech.RecognitionListener
@@ -18,7 +20,6 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.telephony.PhoneNumberUtils
 import android.util.Log
-import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -42,6 +43,8 @@ class MainActivity : Activity() {
     private var isListening = false
     private var statusText: TextView? = null
     private var micButton: Button? = null
+    private var recognitionRetryCount = 0
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
@@ -61,8 +64,39 @@ class MainActivity : Activity() {
         override fun onError(error: Int) {
             try {
                 isListening = false
-                updateStatusSafely("Ready")
-                showErrorSafely("Voice recognition error: $error")
+                when (error) {
+                    SpeechRecognizer.ERROR_NO_MATCH -> {
+                        if (recognitionRetryCount < 1) {
+                            recognitionRetryCount++
+                            updateStatusSafely("Didn't catch that — trying again…")
+                            mainHandler.postDelayed({
+                                try { startVoiceRecognitionSafely(resetRetry = false) }
+                                catch (e: Exception) { logError("Voice retry failed", e) }
+                            }, 350L)
+                        } else {
+                            recognitionRetryCount = 0
+                            updateStatusSafely("Ready")
+                            showErrorSafely("Didn't catch that. Tap the mic and try again.")
+                        }
+                    }
+                    SpeechRecognizer.ERROR_NETWORK,
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                    SpeechRecognizer.ERROR_SERVER -> {
+                        recognitionRetryCount = 0
+                        updateStatusSafely("Ready")
+                        showErrorSafely("Voice service unavailable. Check your internet and try again.")
+                    }
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                        recognitionRetryCount = 0
+                        updateStatusSafely("Ready")
+                        showErrorSafely("No speech detected. Tap the mic and try again.")
+                    }
+                    else -> {
+                        recognitionRetryCount = 0
+                        updateStatusSafely("Ready")
+                        showErrorSafely("Voice recognition couldn't understand that.")
+                    }
+                }
             } catch (e: Exception) { logError("Recognition error handling failed", e) }
         }
         override fun onResults(results: Bundle?) {
@@ -101,10 +135,6 @@ class MainActivity : Activity() {
             micButton?.setOnClickListener {
                 try { startVoiceRecognitionSafely() }
                 catch (e: Exception) { logError("Mic click failed", e); showErrorSafely("Microphone unavailable") }
-            }
-            findViewById<View?>(R.id.rootView)?.setOnClickListener {
-                try { if (!isListening) startVoiceRecognitionSafely() }
-                catch (e: Exception) { logError("Root click failed", e) }
             }
             updateStatusSafely("Ready")
         } catch (e: Exception) { logError("UI setup failed", e) }
@@ -147,8 +177,10 @@ class MainActivity : Activity() {
         } catch (e: Exception) { logError("Torch camera lookup failed", e) }
     }
 
-    private fun startVoiceRecognitionSafely() {
+    private fun startVoiceRecognitionSafely(resetRetry: Boolean = true) {
         try {
+            if (resetRetry) recognitionRetryCount = 0
+            if (isListening) return
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), MICROPHONE_PERMISSION_REQUEST)
                 return
@@ -609,6 +641,7 @@ class MainActivity : Activity() {
             stopVoiceRecognitionSafely()
             speechRecognizer?.destroy()
             speechRecognizer = null
+            mainHandler.removeCallbacksAndMessages(null)
             if (torchEnabled) {
                 try { cameraId?.let { id -> cameraManager?.setTorchMode(id, false) } }
                 catch (e: Exception) { logError("Torch cleanup failed", e) }
