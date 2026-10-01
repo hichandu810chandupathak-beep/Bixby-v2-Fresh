@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.animation.AnimationUtils
 import android.util.Log
 
 class SplashActivity : Activity() {
@@ -21,6 +22,13 @@ class SplashActivity : Activity() {
         try {
             super.onCreate(savedInstanceState)
             setContentView(R.layout.activity_splash)
+            try {
+                findViewById<android.view.View>(R.id.splashOrb)?.startAnimation(
+                    AnimationUtils.loadAnimation(this, R.anim.splash_enter)
+                )
+            } catch (animationError: Exception) {
+                Log.e(TAG, "Splash animation failed", animationError)
+            }
             handler = Handler(Looper.getMainLooper())
             runnable = Runnable {
                 try { openMainSafely() }
