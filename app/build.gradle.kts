@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.bixby.assistant"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.bixby.assistant"
