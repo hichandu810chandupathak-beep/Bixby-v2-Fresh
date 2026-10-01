@@ -2,4 +2,13 @@
 <resources>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
+    <color name="bg_top">#111A3A</color>
+    <color name="bg_bottom">#05060B</color>
+    <color name="accent_blue">#4B7BFF</color>
+    <color name="accent_cyan">#67E8FF</color>
+    <color name="accent_purple">#9B6CFF</color>
+    <color name="text_primary">#F7F9FF</color>
+    <color name="text_secondary">#AAB2C7</color>
+    <color name="glass_stroke">#35FFFFFF</color>
+    <color name="glass_fill">#18FFFFFF</color>
 </resources>
