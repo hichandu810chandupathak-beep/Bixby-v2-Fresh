@@ -20,6 +20,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.telephony.PhoneNumberUtils
 import android.util.Log
+import android.view.animation.AnimationUtils
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -119,6 +120,13 @@ class MainActivity : Activity() {
         try {
             super.onCreate(savedInstanceState)
             setContentView(R.layout.activity_main)
+            try {
+                findViewById<android.view.View>(R.id.assistantOrb)?.startAnimation(
+                    AnimationUtils.loadAnimation(this, R.anim.orb_pulse)
+                )
+            } catch (animationError: Exception) {
+                logError("Orb animation failed", animationError)
+            }
             setupUiSafely()
             initializeHardwareSafely()
             initializeSpeechSafely()
