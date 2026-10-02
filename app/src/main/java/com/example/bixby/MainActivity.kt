@@ -1,5 +1,7 @@
 package com.example.bixby
 
+import com.bixby.assistant.R
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
