@@ -28,7 +28,7 @@
         </activity>
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.bixby.MainActivity"
             android:exported="false" />
 
         <service
