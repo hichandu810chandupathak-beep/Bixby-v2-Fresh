@@ -99,7 +99,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="Type or tap mic..."
-            android:hintTextColor="@color/text_muted"
+            android:textColorHint="@color/text_muted"
             android:textColor="@color/text_white"
             android:textSize="14sp"
             android:singleLine="true"
