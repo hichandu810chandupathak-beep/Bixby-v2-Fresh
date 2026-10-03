@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
         orbView = findViewById(R.id.orbView)
 
         setupOrb()
+        startPulseAnimation()
         setupMicButton()
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
@@ -145,20 +146,13 @@ class MainActivity : AppCompatActivity() {
 
             override fun onEndOfSpeech() {
                 statusText.text = "Processing..."
-                stopPulseAnimation()
             }
 
             override fun onError(error: Int) {
                 statusText.text = "Tap mic to try again"
-                stopPulseAnimation()
-                orbView.scaleX = 1f
-                orbView.scaleY = 1f
             }
 
             override fun onResults(results: Bundle?) {
-                stopPulseAnimation()
-                orbView.scaleX = 1f
-                orbView.scaleY = 1f
 
                 val matches = results?.getStringArrayList(
                     SpeechRecognizer.RESULTS_RECOGNITION
@@ -193,6 +187,8 @@ class MainActivity : AppCompatActivity() {
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
         }
 
         try {
@@ -716,15 +712,36 @@ class MainActivity : AppCompatActivity() {
 
         val queryWords = appLookupWords(appName)
 
-        // Deterministic priority: exact label/package -> full contains -> word contains.
-        for ((packageName, displayLabel) in universalApps) {
-            val normalizedLabel = normalizeAppLookupText(displayLabel)
-            val normalizedPackage = normalizeAppLookupText(packageName)
+        // WhatsApp can exist as the original app plus a Samsung Dual Messenger/App Clone.
+        if (query == "whatsapp") {
+            val whatsappPackages = universalApps
+                .filter { (packageName, displayLabel) ->
+                    normalizeAppLookupText(displayLabel) == "whatsapp" ||
+                        packageName == "com.whatsapp" ||
+                        packageName.contains("whatsapp")
+                }
+                .keys
+                .mapNotNull { createPackageLaunchIntent(it) }
 
-            if (normalizedLabel == query || normalizedPackage == query) {
-                createPackageLaunchIntent(packageName)?.let { return it }
+            when (whatsappPackages.size) {
+                0 -> Unit
+                1 -> return whatsappPackages.first()
+                else -> return createAppChooserIntent(whatsappPackages)
             }
         }
+
+        // Deterministic priority: exact label/package -> full contains -> word contains.
+        val exactMatches = universalApps
+            .filter { (packageName, displayLabel) ->
+                val normalizedLabel = normalizeAppLookupText(displayLabel)
+                val normalizedPackage = normalizeAppLookupText(packageName)
+                normalizedLabel == query || normalizedPackage == query
+            }
+            .keys
+            .mapNotNull { createPackageLaunchIntent(it) }
+
+        if (exactMatches.size == 1) return exactMatches.first()
+        if (exactMatches.size > 1) return createAppChooserIntent(exactMatches)
 
         for ((packageName, displayLabel) in universalApps) {
             val normalizedLabel = normalizeAppLookupText(displayLabel)
@@ -748,6 +765,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         return null
+    }
+
+    private fun createAppChooserIntent(intents: List<Intent>): Intent {
+        val primary = Intent(intents.first())
+        val alternatives = intents.drop(1).toTypedArray()
+
+        if (alternatives.isNotEmpty()) {
+            primary.putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives)
+        }
+
+        return Intent.createChooser(primary, "Choose WhatsApp")
     }
 
     private fun createPackageLaunchIntent(packageName: String): Intent? {
