@@ -1,6 +1,5 @@
 package com.example.bixby
 
-import android.service.voice.VoiceInteractionService
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 
@@ -10,5 +9,5 @@ class BixbyVoiceInteractionSessionService : VoiceInteractionSessionService() {
 }
 
 private class BixbyVoiceInteractionSession(
-    service: VoiceInteractionService
-) : VoiceInteractionSession(service)
+    context: android.content.Context
+) : VoiceInteractionSession(context)
