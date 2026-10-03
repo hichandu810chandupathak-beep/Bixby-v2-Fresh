@@ -15,8 +15,12 @@ import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.animation.LinearInterpolator
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -47,6 +51,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var greetingText: TextView
     private lateinit var pulseView: View
     private lateinit var orbView: View
+    private lateinit var textInput: EditText
+    private lateinit var textToSpeech: TextToSpeech
+    private lateinit var aiHandler: AssistantAiHandler
+    private var ttsReady = false
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -71,6 +79,15 @@ class MainActivity : AppCompatActivity() {
         greetingText = findViewById(R.id.greetingText)
         pulseView = findViewById(R.id.pulseView)
         orbView = findViewById(R.id.orbView)
+        textInput = findViewById(R.id.textInput)
+        aiHandler = AssistantAiHandler(this)
+        textToSpeech = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                textToSpeech.language = Locale.getDefault()
+                textToSpeech.setSpeechRate(0.96f)
+            }
+        }
         setupOrb()
         startPulseAnimation()
         setupMicButton()
@@ -80,6 +97,15 @@ class MainActivity : AppCompatActivity() {
 
         micButton.setOnClickListener {
             startListening()
+        }
+
+        textInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND || actionId == EditorInfo.IME_ACTION_DONE) {
+                submitTypedCommand()
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -316,15 +342,62 @@ class MainActivity : AppCompatActivity() {
             isCallCommand(command) -> handleCallCommand(command)
             isOpenCommand(command) -> openRequestedApp(command)
 
-            else -> {
-                statusText.text = "Command not mapped"
+            else -> askConversationalAi(command)
+        }
+    }
+
+    private fun submitTypedCommand() {
+        val command = textInput.text.toString().trim()
+        if (command.isBlank()) return
+        textInput.text?.clear()
+        greetingText.text = "You said: \"$command\""
+        executeCommand(command.lowercase(Locale.ROOT))
+    }
+
+    private fun askConversationalAi(command: String) {
+        statusText.text = "Thinking..."
+        setOrbState(OrbState.PROCESSING)
+        commandScope.launch {
+            val result = aiHandler.generateResponse(command)
+            if (isFinishing || isDestroyed) return@launch
+
+            result.onSuccess { response ->
+                greetingText.text = response
+                statusText.text = "Ready"
+                speakResponse(response)
+            }.onFailure { error ->
+                statusText.text = "AI unavailable"
                 Toast.makeText(
-                    this,
-                    "I couldn't find an action for that command.",
-                    Toast.LENGTH_SHORT
+                    this@MainActivity,
+                    error.message ?: "Couldn't connect to AI.",
+                    Toast.LENGTH_LONG
                 ).show()
+                setOrbState(OrbState.IDLE)
             }
         }
+    }
+
+    private fun speakResponse(response: String) {
+        if (!ttsReady) {
+            setOrbState(OrbState.IDLE)
+            return
+        }
+
+        val locale = Locale.getDefault()
+        textToSpeech.language = locale
+        val maleVoice = textToSpeech.voices
+            .asSequence()
+            .filter { it.locale.language == locale.language }
+            .filter {
+                val name = it.name.lowercase(Locale.ROOT)
+                name.contains("male") || name.contains("masculine")
+            }
+            .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { it.latency }))
+            .firstOrNull()
+
+        maleVoice?.let { textToSpeech.voice = it }
+        setOrbState(OrbState.PROCESSING)
+        textToSpeech.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_response")
     }
 
     private fun isExitCommand(command: String): Boolean {
@@ -976,6 +1049,7 @@ class MainActivity : AppCompatActivity() {
         }
         commandScope.cancel()
         stopPulseAnimation()
+        if (::textToSpeech.isInitialized) textToSpeech.shutdown()
         super.onDestroy()
     }
 }

@@ -2,7 +2,7 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0B0F19"
+    android:background="@color/background_dark"
     android:padding="24dp">
 
     <LinearLayout
@@ -17,7 +17,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Bixby AI"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_white"
             android:textSize="22sp"
             android:textStyle="bold" />
 
@@ -30,7 +30,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="ADVANCED"
-            android:textColor="#00F2FE"
+            android:textColor="@color/gemini_blue_light"
             android:textSize="12sp"
             android:letterSpacing="0.15" />
     </LinearLayout>
@@ -77,7 +77,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Ready"
-            android:textColor="#94A3B8"
+            android:textColor="@color/text_muted"
             android:textSize="15sp" />
     </LinearLayout>
 
@@ -92,13 +92,19 @@
         android:paddingVertical="8dp"
         android:gravity="center_vertical">
 
-        <TextView
+        <EditText
+            android:id="@+id/textInput"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="Tap mic to speak command"
-            android:textColor="#94A3B8"
-            android:textSize="14sp" />
+            android:background="@android:color/transparent"
+            android:hint="Type or tap mic..."
+            android:textColorHint="@color/text_muted"
+            android:textColor="@color/text_white"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:imeOptions="actionSend"
+            android:inputType="textCapSentences" />
 
         <ImageButton
             android:id="@+id/micButton"
