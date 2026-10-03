@@ -1,8 +1,11 @@
 package com.example.bixby
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Bundle
@@ -55,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         orbView = findViewById(R.id.orbView)
 
         setupOrb()
+        setupMicButton()
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
 
@@ -64,18 +68,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupOrb() {
-        val orb = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(android.graphics.Color.rgb(0, 242, 254))
+        orbView.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.rgb(0, 242, 254))
         }
-        orbView.background = orb
 
-        val glow = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(android.graphics.Color.rgb(0, 242, 254))
+        pulseView.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.rgb(0, 242, 254))
         }
-        pulseView.background = glow
         pulseView.alpha = 0.22f
+    }
+
+    private fun setupMicButton() {
+        micButton.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.rgb(0, 242, 254))
+        }
+        micButton.clipToOutline = true
     }
 
     private fun requestRequiredPermissionsIfNeeded() {
@@ -101,6 +111,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSpeechRecognizer() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 statusText.text = "Listening..."
@@ -137,11 +148,14 @@ class MainActivity : AppCompatActivity() {
                 orbView.scaleX = 1f
                 orbView.scaleY = 1f
 
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val matches = results?.getStringArrayList(
+                    SpeechRecognizer.RESULTS_RECOGNITION
+                )
+
                 if (!matches.isNullOrEmpty()) {
-                    val cmd = matches[0].lowercase(Locale.ROOT).trim()
-                    greetingText.text = "You said: \"$cmd\""
-                    executeCommand(cmd)
+                    val command = matches[0].lowercase(Locale.ROOT).trim()
+                    greetingText.text = "You said: \"$command\""
+                    executeCommand(command)
                 }
             }
 
@@ -151,25 +165,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startListening() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
+        if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                REQUEST_AUDIO
+            )
             return
         }
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
-        speechRecognizer.startListening(intent)
+
+        try {
+            speechRecognizer.startListening(intent)
+        } catch (_: Exception) {
+            statusText.text = "Couldn't start microphone"
+            Toast.makeText(
+                this,
+                "Couldn't start voice recognition.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun startPulseAnimation() {
         val scale = ScaleAnimation(
-            0.92f, 1.18f,
-            0.92f, 1.18f,
-            Animation.RELATIVE_TO_SELF, 0.5f,
-            Animation.RELATIVE_TO_SELF, 0.5f
+            0.92f,
+            1.18f,
+            0.92f,
+            1.18f,
+            Animation.RELATIVE_TO_SELF,
+            0.5f,
+            Animation.RELATIVE_TO_SELF,
+            0.5f
         ).apply {
             duration = 700
             repeatMode = Animation.REVERSE
@@ -184,12 +219,17 @@ class MainActivity : AppCompatActivity() {
 
         pulseView.startAnimation(scale)
         pulseView.startAnimation(alpha)
+
         orbView.startAnimation(
             ScaleAnimation(
-                0.94f, 1.06f,
-                0.94f, 1.06f,
-                Animation.RELATIVE_TO_SELF, 0.5f,
-                Animation.RELATIVE_TO_SELF, 0.5f
+                0.94f,
+                1.06f,
+                0.94f,
+                1.06f,
+                Animation.RELATIVE_TO_SELF,
+                0.5f,
+                Animation.RELATIVE_TO_SELF,
+                0.5f
             ).apply {
                 duration = 700
                 repeatMode = Animation.REVERSE
@@ -204,143 +244,192 @@ class MainActivity : AppCompatActivity() {
         pulseView.alpha = 0.22f
     }
 
-    private fun executeCommand(cmd: String) {
+    private fun executeCommand(command: String) {
         when {
-            isFlashlightCommand(cmd) -> toggleFlashlight(cmd)
+            isExitCommand(command) -> goHome()
+            isFlashlightCommand(command) -> toggleFlashlight(command)
 
-            isWifiCommand(cmd) -> {
+            isWifiCommand(command) -> {
                 statusText.text = "Opening Wi-Fi controls"
-                startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                safeStartActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
 
-            isBluetoothCommand(cmd) -> {
-                if (cmd.contains("turn on") || cmd.contains("enable") || cmd.contains("switch on")) {
-                    statusText.text = "Opening Bluetooth enable control"
-                    try {
-                        startActivity(Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                    } catch (_: Exception) {
-                        startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-                    }
-                } else {
-                    statusText.text = "Opening Bluetooth controls"
-                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            isBluetoothCommand(command) -> {
+                statusText.text = "Opening Bluetooth controls"
+                try {
+                    safeStartActivity(
+                        Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                    )
+                } catch (_: Exception) {
+                    safeStartActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }
             }
 
-            isCallCommand(cmd) -> handleCallCommand(cmd)
-
-            isOpenCommand(cmd) -> openRequestedApp(cmd)
+            isCallCommand(command) -> handleCallCommand(command)
+            isOpenCommand(command) -> openRequestedApp(command)
 
             else -> {
                 statusText.text = "Command not mapped"
-                Toast.makeText(this, "I couldn't find an action for that command.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "I couldn't find an action for that command.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
 
-    private fun isFlashlightCommand(cmd: String): Boolean =
-        cmd.contains("flashlight") ||
-            cmd.contains("torch") ||
-            cmd.contains("flash light")
+    private fun isExitCommand(command: String): Boolean {
+        val normalized = command.trim()
+        return normalized == "exit" ||
+            normalized == "close app" ||
+            normalized == "close application" ||
+            normalized == "go home" ||
+            normalized == "stop"
+    }
 
-    private fun isWifiCommand(cmd: String): Boolean =
-        cmd.contains("wifi") || cmd.contains("wi-fi")
+    private fun goHome() {
+        statusText.text = "Going home"
 
-    private fun isBluetoothCommand(cmd: String): Boolean =
-        cmd.contains("bluetooth")
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
 
-    private fun isCallCommand(cmd: String): Boolean =
-        cmd.startsWith("call ") ||
-            cmd.startsWith("call") ||
-            cmd.startsWith("phone ") ||
-            cmd.contains("call ")
+        try {
+            startActivity(homeIntent)
+        } catch (_: Exception) {
+            finishAndRemoveTask()
+        }
+    }
 
-    private fun isOpenCommand(cmd: String): Boolean =
-        cmd.startsWith("open ") || cmd.startsWith("open")
+    private fun isFlashlightCommand(command: String): Boolean =
+        command.contains("flashlight") ||
+            command.contains("torch") ||
+            command.contains("flash light")
 
-    private fun toggleFlashlight(cmd: String) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            pendingFlashlightCommand = cmd
+    private fun isWifiCommand(command: String): Boolean =
+        command.contains("wifi") || command.contains("wi-fi")
+
+    private fun isBluetoothCommand(command: String): Boolean =
+        command.contains("bluetooth")
+
+    private fun isCallCommand(command: String): Boolean =
+        command.startsWith("call ") ||
+            command.startsWith("call") ||
+            command.startsWith("phone ")
+
+    private fun isOpenCommand(command: String): Boolean =
+        command.startsWith("open ")
+
+    private fun toggleFlashlight(command: String) {
+        if (!hasPermission(Manifest.permission.CAMERA)) {
+            pendingFlashlightCommand = command
             statusText.text = "Camera permission required"
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                REQUEST_CAMERA
+            )
             return
         }
 
-        val wantsOn = cmd.contains("turn on") ||
-            cmd.contains("switch on") ||
-            cmd.contains("enable") ||
-            Regex("\\bon\\b").containsMatchIn(cmd)
+        val wantsOn = command.contains("turn on") ||
+            command.contains("switch on") ||
+            command.contains("enable") ||
+            Regex("\\bon\\b").containsMatchIn(command)
 
-        val wantsOff = cmd.contains("turn off") ||
-            cmd.contains("switch off") ||
-            cmd.contains("disable") ||
-            Regex("\\boff\\b").containsMatchIn(cmd)
+        val wantsOff = command.contains("turn off") ||
+            command.contains("switch off") ||
+            command.contains("disable") ||
+            Regex("\\boff\\b").containsMatchIn(command)
 
-        if (!wantsOn && !wantsOff) {
-            flashlightOn = !flashlightOn
-        } else {
-            flashlightOn = wantsOn
-        }
+        flashlightOn = if (!wantsOn && !wantsOff) !flashlightOn else wantsOn
 
         try {
             val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
             val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
                 cameraManager.getCameraCharacteristics(id)
-                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                    .get(
+                        android.hardware.camera2.CameraCharacteristics
+                            .FLASH_INFO_AVAILABLE
+                    ) == true
             }
 
             if (cameraId == null) {
                 statusText.text = "Flashlight unavailable"
-                Toast.makeText(this, "This device has no available flashlight.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "This device has no available flashlight.",
+                    Toast.LENGTH_SHORT
+                ).show()
                 return
             }
 
             cameraManager.setTorchMode(cameraId, flashlightOn)
-            statusText.text = if (flashlightOn) "Flashlight ON" else "Flashlight OFF"
+            statusText.text =
+                if (flashlightOn) "Flashlight ON" else "Flashlight OFF"
         } catch (_: SecurityException) {
             statusText.text = "Camera permission unavailable"
-            Toast.makeText(this, "Camera permission is required to control the flashlight.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Camera permission is required to control the flashlight.",
+                Toast.LENGTH_SHORT
+            ).show()
         } catch (_: Exception) {
             statusText.text = "Flashlight unavailable"
-            Toast.makeText(this, "Couldn't control the flashlight.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Couldn't control the flashlight.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private fun handleCallCommand(cmd: String) {
-        val target = extractCallTarget(cmd)
+    private fun handleCallCommand(command: String) {
+        val target = extractCallTarget(command)
 
         if (target.isBlank()) {
             statusText.text = "Contact or number missing"
-            Toast.makeText(this, "Please say a contact name or phone number.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Please say a contact name or phone number.",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 
         pendingCallTarget = target
 
-        val hasCallPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-        val hasContactsPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-        val looksLikeNumber = extractPhoneNumber(target) != null
+        val callGranted = hasPermission(Manifest.permission.CALL_PHONE)
+        val contactsGranted = hasPermission(Manifest.permission.READ_CONTACTS)
+        val isNumber = extractPhoneNumber(target) != null
 
-        val missing = buildList {
-            if (!hasCallPermission) add(Manifest.permission.CALL_PHONE)
-            if (!looksLikeNumber && !hasContactsPermission) add(Manifest.permission.READ_CONTACTS)
+        val missingPermissions = buildList {
+            if (!callGranted) add(Manifest.permission.CALL_PHONE)
+            if (!isNumber && !contactsGranted) add(Manifest.permission.READ_CONTACTS)
         }
 
-        if (missing.isNotEmpty()) {
+        if (missingPermissions.isNotEmpty()) {
             statusText.text = "Permission required to place call"
-            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_CALL)
+            ActivityCompat.requestPermissions(
+                this,
+                missingPermissions.toTypedArray(),
+                REQUEST_CALL
+            )
             return
         }
 
         resolveAndCall(target)
     }
 
-    private fun extractCallTarget(cmd: String): String {
-        return cmd
-            .replaceFirst(Regex("""^\s*(please\s+)?(call|phone)\s+"""), "")
-            .replaceFirst(Regex("""^\s*(please\s+)?(call|phone)\s*$"""), "")
+    private fun extractCallTarget(command: String): String =
+        command
+            .replaceFirst(
+                Regex("""^\s*(please\s+)?(call|phone)\s+"""),
+                ""
+            )
             .trim()
-    }
 
     private fun extractPhoneNumber(value: String): String? {
         val normalized = value
@@ -350,47 +439,61 @@ class MainActivity : AppCompatActivity() {
             .replace("(", "")
             .replace(")", "")
 
-        val match = Regex("""(?:\+?\d{10,15})""").find(normalized) ?: return null
-        return match.value
+        return Regex("""(?:\+?\d{10,15})""")
+            .find(normalized)
+            ?.value
     }
 
     private fun resolveAndCall(target: String) {
-        val number = extractPhoneNumber(target)
-        if (number != null) {
-            placeDirectCall(number)
+        val directNumber = extractPhoneNumber(target)
+
+        if (directNumber != null) {
+            placeCallSafely(directNumber)
             return
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasPermission(Manifest.permission.READ_CONTACTS)) {
+            pendingCallTarget = target
             statusText.text = "Contacts permission required"
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CONTACTS), REQUEST_CONTACTS)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_CONTACTS),
+                REQUEST_CONTACTS
+            )
             return
         }
 
-        val contactNumber = findContactNumber(target)
+        val contactNumber = findContactNumberSafely(target)
+
         if (contactNumber == null) {
-            statusText.text = "Contact not found"
-            Toast.makeText(this, "I couldn't find $target in your contacts.", Toast.LENGTH_SHORT).show()
             pendingCallTarget = null
+            statusText.text = "Contact not found"
+            Toast.makeText(
+                this,
+                "I couldn't find $target in your contacts.",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 
-        placeDirectCall(contactNumber)
+        placeCallSafely(contactNumber)
     }
 
-    private fun findContactNumber(contactName: String): String? {
+    private fun findContactNumberSafely(contactName: String): String? {
         val normalizedTarget = normalizeContactName(contactName)
         if (normalizedTarget.isBlank()) return null
 
-        val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
-        )
-
-        val selection = "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} LIKE ?"
-        val selectionArgs = arrayOf("%$contactName%")
-
         return try {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            )
+
+            val selection =
+                "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} LIKE ?"
+
+            val selectionArgs = arrayOf("%$contactName%")
+
             contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 projection,
@@ -398,23 +501,44 @@ class MainActivity : AppCompatActivity() {
                 selectionArgs,
                 "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} COLLATE NOCASE ASC"
             )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY
+                )
+                val numberIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                )
+
                 var fallbackNumber: String? = null
 
-                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY)
-                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-
                 while (cursor.moveToNext()) {
-                    val name = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
-                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else null
+                    val name = if (nameIndex >= 0) {
+                        cursor.getString(nameIndex).orEmpty()
+                    } else {
+                        ""
+                    }
+
+                    val number = if (numberIndex >= 0) {
+                        cursor.getString(numberIndex)
+                    } else {
+                        null
+                    }
 
                     if (number.isNullOrBlank()) continue
-                    if (normalizeContactName(name) == normalizedTarget) return@use number
-                    if (fallbackNumber == null) fallbackNumber = number
+
+                    if (normalizeContactName(name) == normalizedTarget) {
+                        return@use number
+                    }
+
+                    if (fallbackNumber == null) {
+                        fallbackNumber = number
+                    }
                 }
 
                 fallbackNumber
             }
         } catch (_: SecurityException) {
+            null
+        } catch (_: Exception) {
             null
         }
     }
@@ -422,115 +546,245 @@ class MainActivity : AppCompatActivity() {
     private fun normalizeContactName(value: String): String =
         value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
 
-    private fun placeDirectCall(number: String) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            pendingCallTarget = number
-            statusText.text = "Call permission required"
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQUEST_CALL)
+    private fun placeCallSafely(number: String) {
+        if (number.isBlank()) {
+            pendingCallTarget = null
+            statusText.text = "Phone number unavailable"
+            Toast.makeText(
+                this,
+                "No valid phone number was found.",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 
+        if (!hasPermission(Manifest.permission.CALL_PHONE)) {
+            pendingCallTarget = number
+            statusText.text = "Call permission required"
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CALL_PHONE),
+                REQUEST_CALL
+            )
+            return
+        }
+
+        val callUri = Uri.parse("tel:$number")
+
         try {
             statusText.text = "Calling $number..."
-            startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:$number")))
+            startActivity(Intent(Intent.ACTION_CALL, callUri))
             pendingCallTarget = null
+            return
         } catch (_: SecurityException) {
-            statusText.text = "Call permission unavailable"
-            Toast.makeText(this, "Call permission is required.", Toast.LENGTH_SHORT).show()
+        } catch (_: ActivityNotFoundException) {
+        } catch (_: Exception) {
+        }
+
+        try {
+            statusText.text = "Opening dialer"
+            startActivity(Intent(Intent.ACTION_DIAL, callUri))
+            pendingCallTarget = null
+        } catch (_: Exception) {
+            pendingCallTarget = null
+            statusText.text = "Couldn't start phone app"
+            Toast.makeText(
+                this,
+                "Couldn't start the phone app.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private fun openRequestedApp(cmd: String) {
-        val appName = cmd
-            .replaceFirst(Regex("""^.*?open\s+"""), "")
+    private fun openRequestedApp(command: String) {
+        val appName = command
+            .removePrefix("open ")
             .replace(Regex("""\b(application|app)\b"""), "")
             .trim()
 
         if (appName.isBlank()) {
             statusText.text = "Please say an app name"
-            Toast.makeText(this, "Please tell me which app to open.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Please tell me which app to open.",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 
         val launchIntent = findLaunchIntentForApp(appName)
 
-        if (launchIntent != null) {
-            statusText.text = "Opening $appName"
-            startActivity(launchIntent)
-        } else {
+        if (launchIntent == null) {
             statusText.text = "App not found"
-            Toast.makeText(this, "I couldn't find $appName on this phone.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "I couldn't find $appName on this phone.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
         }
+
+        statusText.text = "Opening $appName"
+        safeStartActivity(launchIntent)
     }
 
     private fun findLaunchIntentForApp(appName: String): Intent? {
-        val normalizedQuery = normalizeAppName(appName)
-        if (normalizedQuery.isBlank()) return null
-
-        val packageCandidates = knownPackageCandidates(normalizedQuery)
-        for (packageName in packageCandidates) {
-            packageManager.getLaunchIntentForPackage(packageName)?.let { return it }
-        }
+        val query = normalizeAppName(appName)
+        if (query.isBlank()) return null
 
         val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        val launchableApps = packageManager.queryIntentActivities(
-            launcherIntent,
-            PackageManager.MATCH_ALL
+        val activities = try {
+            packageManager.queryIntentActivities(
+                launcherIntent,
+                PackageManager.MATCH_ALL
+            )
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        if (activities.isEmpty()) {
+            return findKnownPackageLaunchIntent(query)
+        }
+
+        val exact = activities.firstOrNull { info ->
+            normalizeAppName(info.loadLabel(packageManager).toString()) == query
+        }
+
+        val partial = activities.firstOrNull { info ->
+            val label = normalizeAppName(
+                info.loadLabel(packageManager).toString()
+            )
+            label.contains(query) || query.contains(label)
+        }
+
+        val keywordMatch = activities.firstOrNull { info ->
+            val label = normalizeAppName(
+                info.loadLabel(packageManager).toString()
+            )
+            queryTokens(query).any { token ->
+                token.length >= 3 && label.contains(token)
+            }
+        }
+
+        val match = exact ?: partial ?: keywordMatch ?: findKnownActivity(
+            activities,
+            query
         )
 
-        val exact = launchableApps.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString()
-            normalizeAppName(label) == normalizedQuery
-        }
-
-        val partial = launchableApps.firstOrNull { info ->
-            val label = normalizeAppName(info.loadLabel(packageManager).toString())
-            label.contains(normalizedQuery) || normalizedQuery.contains(label)
-        }
-
-        return (exact ?: partial)?.activityInfo?.let { activityInfo ->
+        return match?.activityInfo?.let { activityInfo ->
             Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
                 setClassName(activityInfo.packageName, activityInfo.name)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                )
             }
         }
     }
 
-    private fun knownPackageCandidates(normalizedAppName: String): List<String> {
-        val aliases = mapOf(
-            "whatsapp" to listOf("com.whatsapp", "com.whatsapp.w4b"),
-            "whatsappbusiness" to listOf("com.whatsapp.w4b", "com.whatsapp"),
-            "calculator" to listOf(
+    private fun queryTokens(value: String): List<String> =
+        value.split(Regex("[^a-z0-9]+"))
+            .filter { it.isNotBlank() }
+
+    private fun findKnownActivity(
+        activities: List<android.content.pm.ResolveInfo>,
+        query: String
+    ): android.content.pm.ResolveInfo? {
+        val packageKeywords = mapOf(
+            "whatsapp" to listOf("whatsapp"),
+            "calculator" to listOf("calculator", "popupcalculator"),
+            "chrome" to listOf("chrome"),
+            "youtube" to listOf("youtube"),
+            "gallery" to listOf("gallery", "photos"),
+            "photo" to listOf("gallery", "photos"),
+            "photos" to listOf("gallery", "photos"),
+            "files" to listOf("file", "files", "documents"),
+            "file" to listOf("file", "files", "documents"),
+            "messaging" to listOf("message", "messaging"),
+            "messages" to listOf("message", "messaging")
+        )
+
+        val keywords = packageKeywords[query] ?: queryTokens(query)
+
+        return activities.firstOrNull { info ->
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+            val label = info.loadLabel(packageManager)
+                .toString()
+                .lowercase(Locale.ROOT)
+
+            keywords.any { keyword ->
+                keyword.length >= 3 &&
+                    (packageName.contains(keyword) || label.contains(keyword))
+            }
+        } ?: findKnownPackageLaunchIntent(query)?.let { intent ->
+            activities.firstOrNull {
+                it.activityInfo.packageName == intent.component?.packageName
+            }
+        }
+    }
+
+    private fun findKnownPackageLaunchIntent(query: String): Intent? {
+        val candidates = when (query) {
+            "whatsapp" -> listOf("com.whatsapp", "com.whatsapp.w4b")
+            "calculator" -> listOf(
                 "com.sec.android.app.popupcalculator",
                 "com.google.android.calculator",
                 "com.android.calculator2"
-            ),
-            "gallery" to listOf(
+            )
+            "chrome" -> listOf("com.android.chrome")
+            "youtube" -> listOf("com.google.android.youtube")
+            "gallery", "photos" -> listOf(
                 "com.sec.android.gallery3d",
                 "com.google.android.apps.photos"
-            ),
-            "photos" to listOf("com.google.android.apps.photos", "com.sec.android.gallery3d"),
-            "messages" to listOf(
+            )
+            "files", "file" -> listOf(
+                "com.sec.android.app.myfiles",
+                "com.google.android.documentsui"
+            )
+            "messages", "messaging" -> listOf(
                 "com.samsung.android.messaging",
                 "com.google.android.apps.messaging"
-            ),
-            "messaging" to listOf(
-                "com.samsung.android.messaging",
-                "com.google.android.apps.messaging"
-            ),
-            "chrome" to listOf("com.android.chrome"),
-            "youtube" to listOf("com.google.android.youtube")
-        )
+            )
+            else -> emptyList()
+        }
 
-        return aliases[normalizedAppName].orEmpty()
+        return candidates.firstNotNullOfOrNull {
+            packageManager.getLaunchIntentForPackage(it)
+        }
     }
 
     private fun normalizeAppName(value: String): String =
         value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(
+            this,
+            permission
+        ) == PackageManager.PERMISSION_GRANTED
+
+    private fun safeStartActivity(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            statusText.text = "Action unavailable"
+            Toast.makeText(
+                this,
+                "That action is unavailable on this phone.",
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (_: Exception) {
+            statusText.text = "Couldn't open"
+            Toast.makeText(
+                this,
+                "Couldn't open that action.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -541,19 +795,22 @@ class MainActivity : AppCompatActivity() {
 
         when (requestCode) {
             REQUEST_AUDIO -> {
-                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                    statusText.text = "Microphone permission granted"
-                } else {
-                    statusText.text = "Microphone permission required"
-                }
+                statusText.text =
+                    if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                        "Microphone permission granted"
+                    } else {
+                        "Microphone permission required"
+                    }
             }
 
             REQUEST_CAMERA -> {
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                    pendingFlashlightCommand?.let {
-                        pendingFlashlightCommand = null
-                        toggleFlashlight(it)
-                    } ?: run {
+                    val pending = pendingFlashlightCommand
+                    pendingFlashlightCommand = null
+
+                    if (pending != null) {
+                        toggleFlashlight(pending)
+                    } else {
                         statusText.text = "Camera permission granted"
                     }
                 } else {
@@ -564,14 +821,18 @@ class MainActivity : AppCompatActivity() {
             REQUEST_CALL, REQUEST_CONTACTS -> {
                 val target = pendingCallTarget ?: return
                 val number = extractPhoneNumber(target)
-                val callGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-                val contactsGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
-                if (callGranted && (number != null || contactsGranted)) {
+                if (hasPermission(Manifest.permission.CALL_PHONE) &&
+                    (number != null || hasPermission(Manifest.permission.READ_CONTACTS))
+                ) {
                     resolveAndCall(target)
                 } else {
                     statusText.text = "Call permission required"
-                    Toast.makeText(this, "Please allow phone and contacts permissions for contact calling.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this,
+                        "Phone or contacts permission is required.",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
 
@@ -581,21 +842,20 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.CAMERA,
                     Manifest.permission.CALL_PHONE,
                     Manifest.permission.READ_CONTACTS
-                ).filter {
-                    ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-                }
+                ).count { !hasPermission(it) }
 
-                statusText.text = if (missing.isEmpty()) {
-                    "Ready"
-                } else {
-                    "Some permissions are still required"
-                }
+                statusText.text =
+                    if (missing == 0) "Ready"
+                    else "Some permissions are still required"
             }
         }
     }
 
     override fun onDestroy() {
-        speechRecognizer.destroy()
+        try {
+            speechRecognizer.destroy()
+        } catch (_: Exception) {
+        }
         super.onDestroy()
     }
 }

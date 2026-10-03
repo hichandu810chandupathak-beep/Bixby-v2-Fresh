@@ -104,7 +104,7 @@
             android:id="@+id/micButton"
             android:layout_width="56dp"
             android:layout_height="56dp"
-            android:background="#00F2FE"
+            android:background="@null"
             android:src="@android:drawable/ic_btn_speak_now"
             android:padding="14dp"
             android:contentDescription="Mic"
