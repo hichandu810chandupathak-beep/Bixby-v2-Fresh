@@ -634,30 +634,43 @@ class MainActivity : AppCompatActivity() {
             emptyList()
         }
 
-        if (activities.isEmpty()) {
-            return findKnownPackageLaunchIntent(query)
+        val searchTerms = linkedSetOf(query).apply {
+            addAll(appAliases(query))
         }
 
         val exact = activities.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val label = normalizeAppName(
+                info.loadLabel(packageManager).toString()
+            )
             val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
-            val normalizedLabel = normalizeAppName(label)
-            normalizedLabel == query || packageName == query
+
+            searchTerms.any { term ->
+                label == term || packageName == term
+            }
         }
 
         val partial = activities.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val label = normalizeAppName(
+                info.loadLabel(packageManager).toString()
+            )
             val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
-            val normalizedLabel = normalizeAppName(label)
 
-            normalizedLabel.contains(query) ||
-                query.contains(normalizedLabel) ||
-                packageName.contains(query)
+            searchTerms.any { term ->
+                term.length >= 3 &&
+                    (
+                        label.contains(term) ||
+                            term.contains(label) ||
+                            packageName.contains(term)
+                        )
+            }
         }
 
         val keywordMatch = activities.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
-            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+            val label = info.loadLabel(packageManager)
+                .toString()
+                .lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName
+                .lowercase(Locale.ROOT)
 
             queryTokens(query).any { token ->
                 token.length >= 3 &&
@@ -670,7 +683,7 @@ class MainActivity : AppCompatActivity() {
             query
         )
 
-        return match?.activityInfo?.let { activityInfo ->
+        val launcherMatch = match?.activityInfo?.let { activityInfo ->
             Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
                 setClassName(activityInfo.packageName, activityInfo.name)
@@ -680,31 +693,52 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+
+        return launcherMatch ?: findKnownPackageLaunchIntent(query)
     }
 
     private fun queryTokens(value: String): List<String> =
         value.split(Regex("[^a-z0-9]+"))
             .filter { it.isNotBlank() }
 
+    private fun appAliases(query: String): List<String> =
+        when (query) {
+            "whatsapp", "whatsup" -> listOf("whatsapp")
+            "youtube" -> listOf("youtube")
+            "chrome", "googlechrome" -> listOf("chrome")
+            "calculator", "calc", "calculation" -> listOf("calculator")
+            "calendar", "calender" -> listOf("calendar")
+            "music", "musics", "media", "player" -> listOf(
+                "music",
+                "media",
+                "player"
+            )
+            "digilocker" -> listOf("digilocker", "digi")
+            "gallery", "photos", "photo" -> listOf(
+                "gallery",
+                "photos"
+            )
+            "files", "file" -> listOf(
+                "files",
+                "file",
+                "documents"
+            )
+            "messages", "messaging", "message" -> listOf(
+                "messages",
+                "messaging",
+                "message"
+            )
+            else -> emptyList()
+        }
+
     private fun findKnownActivity(
         activities: List<android.content.pm.ResolveInfo>,
         query: String
     ): android.content.pm.ResolveInfo? {
-        val packageKeywords = mapOf(
-            "whatsapp" to listOf("whatsapp"),
-            "calculator" to listOf("calculator", "popupcalculator"),
-            "chrome" to listOf("chrome"),
-            "youtube" to listOf("youtube"),
-            "gallery" to listOf("gallery", "photos"),
-            "photo" to listOf("gallery", "photos"),
-            "photos" to listOf("gallery", "photos"),
-            "files" to listOf("file", "files", "documents"),
-            "file" to listOf("file", "files", "documents"),
-            "messaging" to listOf("message", "messaging"),
-            "messages" to listOf("message", "messaging")
-        )
-
-        val keywords = packageKeywords[query] ?: queryTokens(query)
+        val keywords = linkedSetOf(query).apply {
+            addAll(appAliases(query))
+            addAll(queryTokens(query))
+        }
 
         return activities.firstOrNull { info ->
             val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
@@ -716,40 +750,69 @@ class MainActivity : AppCompatActivity() {
                 keyword.length >= 3 &&
                     (packageName.contains(keyword) || label.contains(keyword))
             }
-        } ?: findKnownPackageLaunchIntent(query)?.let { intent ->
-            activities.firstOrNull {
-                it.activityInfo.packageName == intent.component?.packageName
-            }
         }
     }
 
     private fun findKnownPackageLaunchIntent(query: String): Intent? {
         val candidates = when (query) {
-            "whatsapp" -> listOf("com.whatsapp", "com.whatsapp.w4b")
-            "calculator" -> listOf(
+            "whatsapp", "whatsup" -> listOf(
+                "com.whatsapp",
+                "com.whatsapp.w4b"
+            )
+
+            "youtube" -> listOf(
+                "com.google.android.youtube"
+            )
+
+            "chrome", "googlechrome" -> listOf(
+                "com.android.chrome"
+            )
+
+            "calculator", "calc", "calculation" -> listOf(
                 "com.sec.android.app.popupcalculator",
                 "com.google.android.calculator",
                 "com.android.calculator2"
             )
-            "chrome" -> listOf("com.android.chrome")
-            "youtube" -> listOf("com.google.android.youtube")
-            "gallery", "photos" -> listOf(
+
+            "calendar", "calender" -> listOf(
+                "com.samsung.android.calendar",
+                "com.google.android.calendar"
+            )
+
+            "music", "musics", "media", "player" -> listOf(
+                "com.sec.android.app.music",
+                "com.google.android.apps.youtube.music"
+            )
+
+            "digilocker" -> listOf(
+                "com.digilocker.android"
+            )
+
+            "gallery", "photos", "photo" -> listOf(
                 "com.sec.android.gallery3d",
                 "com.google.android.apps.photos"
             )
+
             "files", "file" -> listOf(
                 "com.sec.android.app.myfiles",
                 "com.google.android.documentsui"
             )
-            "messages", "messaging" -> listOf(
+
+            "messages", "messaging", "message" -> listOf(
                 "com.samsung.android.messaging",
                 "com.google.android.apps.messaging"
             )
+
             else -> emptyList()
         }
 
         return candidates.firstNotNullOfOrNull {
-            packageManager.getLaunchIntentForPackage(it)
+            packageManager.getLaunchIntentForPackage(it)?.apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                )
+            }
         }
     }
 
