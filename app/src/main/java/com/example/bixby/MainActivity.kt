@@ -484,57 +484,46 @@ class MainActivity : AppCompatActivity() {
         if (normalizedTarget.isBlank()) return null
 
         return try {
-            val projection = arrayOf(
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
-            )
+            val displayName = ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+            val phoneNumber = ContactsContract.CommonDataKinds.Phone.NUMBER
 
-            val selection =
-                "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} LIKE ?"
+            val projection = arrayOf(displayName, phoneNumber)
 
-            val selectionArgs = arrayOf("%$contactName%")
+            val selection = "($displayName = ? COLLATE NOCASE) OR ($displayName LIKE ? COLLATE NOCASE)"
+            val selectionArgs = arrayOf(contactName, "%$contactName%")
 
             contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 projection,
                 selection,
                 selectionArgs,
-                "\${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY} COLLATE NOCASE ASC"
+                "$displayName COLLATE NOCASE ASC"
             )?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY
-                )
-                val numberIndex = cursor.getColumnIndex(
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
-                )
+                val nameIndex = cursor.getColumnIndex(displayName)
+                val numberIndex = cursor.getColumnIndex(phoneNumber)
 
-                var fallbackNumber: String? = null
+                var partialMatch: String? = null
 
                 while (cursor.moveToNext()) {
-                    val name = if (nameIndex >= 0) {
-                        cursor.getString(nameIndex).orEmpty()
-                    } else {
-                        ""
-                    }
-
-                    val number = if (numberIndex >= 0) {
-                        cursor.getString(numberIndex)
-                    } else {
-                        null
-                    }
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else null
 
                     if (number.isNullOrBlank()) continue
 
-                    if (normalizeContactName(name) == normalizedTarget) {
+                    val normalizedName = normalizeContactName(name)
+
+                    if (normalizedName == normalizedTarget) {
                         return@use number
                     }
 
-                    if (fallbackNumber == null) {
-                        fallbackNumber = number
+                    if (normalizedName.contains(normalizedTarget) ||
+                        normalizedTarget.contains(normalizedName)
+                    ) {
+                        partialMatch = partialMatch ?: number
                     }
                 }
 
-                fallbackNumber
+                partialMatch
             }
         } catch (_: SecurityException) {
             null
@@ -639,7 +628,7 @@ class MainActivity : AppCompatActivity() {
         val activities = try {
             packageManager.queryIntentActivities(
                 launcherIntent,
-                PackageManager.MATCH_ALL
+                0
             )
         } catch (_: Exception) {
             emptyList()
@@ -650,22 +639,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         val exact = activities.firstOrNull { info ->
-            normalizeAppName(info.loadLabel(packageManager).toString()) == query
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+            val normalizedLabel = normalizeAppName(label)
+            normalizedLabel == query || packageName == query
         }
 
         val partial = activities.firstOrNull { info ->
-            val label = normalizeAppName(
-                info.loadLabel(packageManager).toString()
-            )
-            label.contains(query) || query.contains(label)
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+            val normalizedLabel = normalizeAppName(label)
+
+            normalizedLabel.contains(query) ||
+                query.contains(normalizedLabel) ||
+                packageName.contains(query)
         }
 
         val keywordMatch = activities.firstOrNull { info ->
-            val label = normalizeAppName(
-                info.loadLabel(packageManager).toString()
-            )
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+
             queryTokens(query).any { token ->
-                token.length >= 3 && label.contains(token)
+                token.length >= 3 &&
+                    (label.contains(token) || packageName.contains(token))
             }
         }
 
