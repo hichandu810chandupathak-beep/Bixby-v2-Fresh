@@ -588,8 +588,8 @@ class MainActivity : AppCompatActivity() {
     private fun openRequestedApp(command: String) {
         val appName = command
             .trim()
-            .replaceFirst(Regex("""^\\s*open\\s+""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\\b(application|app|please)\\b""", RegexOption.IGNORE_CASE), " ")
+            .replaceFirst(Regex("""^\s*open\s+""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\b(application|app|please)\b""", RegexOption.IGNORE_CASE), " ")
             .trim()
 
         if (appName.isBlank()) {
