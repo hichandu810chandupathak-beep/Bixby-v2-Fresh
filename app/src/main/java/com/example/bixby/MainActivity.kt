@@ -5,6 +5,7 @@ import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.role.RoleManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
@@ -43,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_CAMERA = 102
         private const val REQUEST_CONTACTS = 103
         private const val REQUEST_STARTUP_PERMISSIONS = 104
+        private const val REQUEST_ASSISTANT_ROLE = 105
     }
 
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -93,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         setupMicButton()
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
+        requestAssistantRoleIfAvailable()
         setOrbState(OrbState.IDLE)
 
         micButton.setOnClickListener {
@@ -112,24 +115,67 @@ class MainActivity : AppCompatActivity() {
     private fun setupOrb() {
         pulseView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         orbView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        orbView.background = GradientDrawable().apply {
+        orbView.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(
+                Color.rgb(66, 133, 244),
+                Color.rgb(26, 115, 232),
+                Color.rgb(138, 180, 248)
+            )
+        ).apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.rgb(0, 242, 254))
         }
 
-        pulseView.background = GradientDrawable().apply {
+        pulseView.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(
+                Color.rgb(26, 115, 232),
+                Color.rgb(66, 133, 244)
+            )
+        ).apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.rgb(0, 242, 254))
         }
         pulseView.alpha = 0.22f
     }
 
     private fun setupMicButton() {
-        micButton.background = GradientDrawable().apply {
+        micButton.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(
+                Color.rgb(26, 115, 232),
+                Color.rgb(66, 133, 244)
+            )
+        ).apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.rgb(0, 242, 254))
         }
         micButton.clipToOutline = true
+    }
+
+    private fun requestAssistantRoleIfAvailable() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return
+        val roleManager = getSystemService(RoleManager::class.java) ?: return
+        if (!roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) return
+        if (roleManager.isRoleHeld(RoleManager.ROLE_ASSISTANT)) {
+            statusText.text = "Bixby assistant ready"
+            return
+        }
+        try {
+            startActivityForResult(
+                roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT),
+                REQUEST_ASSISTANT_ROLE
+            )
+        } catch (_: Exception) {
+            statusText.text = "Ready"
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_ASSISTANT_ROLE) {
+            statusText.text =
+                if (resultCode == RESULT_OK) "Bixby assistant ready"
+                else "Ready"
+        }
     }
 
     private fun requestRequiredPermissionsIfNeeded() {
