@@ -1,6 +1,7 @@
 package com.example.bixby
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,15 +16,19 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.view.View
-import android.view.animation.AlphaAnimation
-import android.view.animation.Animation
-import android.view.animation.ScaleAnimation
+import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -47,6 +52,11 @@ class MainActivity : AppCompatActivity() {
     private var pendingFlashlightCommand: String? = null
     private var flashlightOn = false
 
+    private val commandScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var pulseScaleAnimator: ValueAnimator? = null
+    private var pulseAlphaAnimator: ValueAnimator? = null
+    private var orbScaleAnimator: ValueAnimator? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -68,6 +78,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupOrb() {
+        pulseView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        orbView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         orbView.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.rgb(0, 242, 254))
@@ -196,51 +208,59 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startPulseAnimation() {
-        val scale = ScaleAnimation(
-            0.92f,
-            1.18f,
-            0.92f,
-            1.18f,
-            Animation.RELATIVE_TO_SELF,
-            0.5f,
-            Animation.RELATIVE_TO_SELF,
-            0.5f
-        ).apply {
-            duration = 700
-            repeatMode = Animation.REVERSE
-            repeatCount = Animation.INFINITE
-        }
+        stopPulseAnimation()
 
-        val alpha = AlphaAnimation(0.18f, 0.55f).apply {
-            duration = 700
-            repeatMode = Animation.REVERSE
-            repeatCount = Animation.INFINITE
-        }
-
-        pulseView.startAnimation(scale)
-        pulseView.startAnimation(alpha)
-
-        orbView.startAnimation(
-            ScaleAnimation(
-                0.94f,
-                1.06f,
-                0.94f,
-                1.06f,
-                Animation.RELATIVE_TO_SELF,
-                0.5f,
-                Animation.RELATIVE_TO_SELF,
-                0.5f
-            ).apply {
-                duration = 700
-                repeatMode = Animation.REVERSE
-                repeatCount = Animation.INFINITE
+        pulseScaleAnimator = ValueAnimator.ofFloat(0.92f, 1.18f).apply {
+            duration = 700L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                val scale = animator.animatedValue as Float
+                pulseView.scaleX = scale
+                pulseView.scaleY = scale
             }
-        )
+            start()
+        }
+
+        pulseAlphaAnimator = ValueAnimator.ofFloat(0.18f, 0.55f).apply {
+            duration = 700L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                pulseView.alpha = animator.animatedValue as Float
+            }
+            start()
+        }
+
+        orbScaleAnimator = ValueAnimator.ofFloat(0.94f, 1.06f).apply {
+            duration = 700L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                val scale = animator.animatedValue as Float
+                orbView.scaleX = scale
+                orbView.scaleY = scale
+            }
+            start()
+        }
     }
 
     private fun stopPulseAnimation() {
-        pulseView.clearAnimation()
-        orbView.clearAnimation()
+        pulseScaleAnimator?.cancel()
+        pulseAlphaAnimator?.cancel()
+        orbScaleAnimator?.cancel()
+
+        pulseScaleAnimator = null
+        pulseAlphaAnimator = null
+        orbScaleAnimator = null
+
+        pulseView.scaleX = 1f
+        pulseView.scaleY = 1f
+        orbView.scaleX = 1f
+        orbView.scaleY = 1f
         pulseView.alpha = 0.22f
     }
 
@@ -602,34 +622,57 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val launchIntent = findLaunchIntentForApp(appName)
+        commandScope.launch {
+            statusText.text = "Finding $appName..."
 
-        if (launchIntent == null) {
-            statusText.text = "App not found"
-            Toast.makeText(
-                this,
-                "I couldn't find a launchable app named $appName on this phone.",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
+            val launchIntent = withContext(Dispatchers.IO) {
+                findLaunchIntentForApp(appName)
+            }
 
-        try {
-            startActivity(launchIntent)
-            statusText.text = "Opening $appName"
-        } catch (_: Exception) {
-            statusText.text = "Couldn't open $appName"
-            Toast.makeText(
-                this,
-                "I found $appName, but Android couldn't launch it.",
-                Toast.LENGTH_SHORT
-            ).show()
+            if (launchIntent == null) {
+                statusText.text = "App not found"
+                Toast.makeText(
+                    this@MainActivity,
+                    "I couldn't find a launchable app named $appName on this phone.",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+
+            try {
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                )
+                startActivity(launchIntent)
+                statusText.text = "Opening $appName"
+            } catch (_: Exception) {
+                statusText.text = "Couldn't open $appName"
+                Toast.makeText(
+                    this@MainActivity,
+                    "I found $appName, but Android couldn't launch it.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
     private fun findLaunchIntentForApp(appName: String): Intent? {
         val query = normalizeAppLookupText(appName)
         if (query.isBlank()) return null
+
+        // Exact aliases run before universal matching.
+        val exactPackageAliases = mapOf(
+            "playstore" to "com.android.vending",
+            "googleplay" to "com.android.vending",
+            "googleplaystore" to "com.android.vending",
+            "playstoregoogle" to "com.android.vending",
+            "camera" to "com.sec.android.app.camera"
+        )
+
+        exactPackageAliases[query]?.let { packageName ->
+            createPackageLaunchIntent(packageName)?.let { return it }
+        }
 
         // Combine launcher activities and all packages visible to PackageManager.
         val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
@@ -673,19 +716,33 @@ class MainActivity : AppCompatActivity() {
 
         val queryWords = appLookupWords(appName)
 
-        // Match the full spoken query first, then meaningful individual words.
+        // Deterministic priority: exact label/package -> full contains -> word contains.
         for ((packageName, displayLabel) in universalApps) {
             val normalizedLabel = normalizeAppLookupText(displayLabel)
             val normalizedPackage = normalizeAppLookupText(packageName)
 
-            val matchesFullQuery =
-                normalizedLabel.contains(query) || normalizedPackage.contains(query)
-
-            val matchesQueryWord = queryWords.any { word ->
-                normalizedLabel.contains(word) || normalizedPackage.contains(word)
+            if (normalizedLabel == query || normalizedPackage == query) {
+                createPackageLaunchIntent(packageName)?.let { return it }
             }
+        }
 
-            if (matchesFullQuery || matchesQueryWord) {
+        for ((packageName, displayLabel) in universalApps) {
+            val normalizedLabel = normalizeAppLookupText(displayLabel)
+            val normalizedPackage = normalizeAppLookupText(packageName)
+
+            if (normalizedLabel.contains(query) || normalizedPackage.contains(query)) {
+                createPackageLaunchIntent(packageName)?.let { return it }
+            }
+        }
+
+        for ((packageName, displayLabel) in universalApps) {
+            val normalizedLabel = normalizeAppLookupText(displayLabel)
+            val normalizedPackage = normalizeAppLookupText(packageName)
+
+            if (queryWords.any { word ->
+                    normalizedLabel.contains(word) || normalizedPackage.contains(word)
+                }
+            ) {
                 createPackageLaunchIntent(packageName)?.let { return it }
             }
         }
@@ -828,6 +885,8 @@ class MainActivity : AppCompatActivity() {
             speechRecognizer.destroy()
         } catch (_: Exception) {
         }
+        commandScope.cancel()
+        stopPulseAnimation()
         super.onDestroy()
     }
 }
