@@ -618,7 +618,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun findLaunchIntentForApp(appName: String): Intent? {
-        val query = normalizeAppName(appName)
+        val query = cleanAppQuery(appName)
         if (query.isBlank()) return null
 
         val launcherQuery = Intent(Intent.ACTION_MAIN, null).apply {
@@ -631,43 +631,96 @@ class MainActivity : AppCompatActivity() {
             emptyList()
         }
 
-        // STEP 1A: Exact label/package match.
-        val exactMatch = launchableApps.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
-            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+        // STEP 1A: Exact match against the cleaned app label or package name.
+        launchableApps.firstOrNull { info ->
+            val label = normalizeAppName(info.loadLabel(packageManager).toString())
+            val packageName = normalizeAppName(info.activityInfo.packageName)
 
             label == query || packageName == query
-        }
-
-        if (exactMatch != null) {
+        }?.let { info ->
             return createLauncherIntent(
-                exactMatch.activityInfo.packageName,
-                exactMatch.activityInfo.name
+                info.activityInfo.packageName,
+                info.activityInfo.name
             )
         }
 
-        // STEP 1B: Contains label/package match.
-        val containsMatch = launchableApps.firstOrNull { info ->
-            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
-            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+        // STEP 1B: Direct contains match against the label/package name.
+        launchableApps.firstOrNull { info ->
+            val label = normalizeAppName(info.loadLabel(packageManager).toString())
+            val packageName = normalizeAppName(info.activityInfo.packageName)
 
-            label.contains(query, ignoreCase = true) ||
-                packageName.contains(query, ignoreCase = true)
-        }
-
-        if (containsMatch != null) {
+            label.contains(query) ||
+                packageName.contains(query)
+        }?.let { info ->
             return createLauncherIntent(
-                containsMatch.activityInfo.packageName,
-                containsMatch.activityInfo.name
+                info.activityInfo.packageName,
+                info.activityInfo.name
             )
         }
 
-        // STEP 2: Direct package fallback for common apps.
-        for (packageName in knownPackageAliases(query)) {
-            createPackageLaunchIntent(packageName)?.let { return it }
+        // STEP 1C: Match any meaningful spoken app word.
+        // This handles phrases such as "open google youtube".
+        val queryWords = appQueryWords(appName)
+
+        if (queryWords.isNotEmpty()) {
+            launchableApps.firstOrNull { info ->
+                val label = normalizeAppName(info.loadLabel(packageManager).toString())
+                val packageName = normalizeAppName(info.activityInfo.packageName)
+
+                queryWords.any { word ->
+                    label == word ||
+                        label.contains(word) ||
+                        packageName.contains(word)
+                }
+            }?.let { info ->
+                return createLauncherIntent(
+                    info.activityInfo.packageName,
+                    info.activityInfo.name
+                )
+            }
+        }
+
+        // STEP 2: Hardcoded popular-app aliases, always checked after dynamic matching.
+        val aliasQueries = linkedSetOf(query).apply {
+            addAll(queryWords)
+        }
+
+        aliasQueries.forEach { alias ->
+            knownPackageAliases(alias).forEach { packageName ->
+                createPackageLaunchIntent(packageName)?.let { return it }
+            }
         }
 
         return null
+    }
+
+    private fun cleanAppQuery(value: String): String {
+        return value
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\b(open|launch|start|application|app|please)\b"""), " ")
+            .replace(Regex("[^a-z0-9]+"), "")
+            .trim()
+    }
+
+    private fun appQueryWords(value: String): List<String> {
+        val ignoredWords = setOf(
+            "open",
+            "launch",
+            "start",
+            "application",
+            "app",
+            "please",
+            "the"
+        )
+
+        return value
+            .lowercase(Locale.ROOT)
+            .split(Regex("[^a-z0-9]+"))
+            .map { it.trim() }
+            .filter { it.length >= 2 && it !in ignoredWords }
+            .map { normalizeAppName(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
     }
 
     private fun createLauncherIntent(
@@ -716,13 +769,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun knownPackageAliases(query: String): List<String> =
-        when (query) {
-            "whatsapp", "whatsup" -> listOf(
+        when (normalizeAppName(query)) {
+            "whatsapp", "whatsup", "whatsap" -> listOf(
                 "com.whatsapp",
                 "com.whatsapp.w4b"
             )
 
-            "youtube" -> listOf(
+            "youtube", "youtub" -> listOf(
                 "com.google.android.youtube"
             )
 
@@ -741,7 +794,7 @@ class MainActivity : AppCompatActivity() {
                 "com.google.android.calendar"
             )
 
-            "digilocker", "digi" -> listOf(
+            "digilocker", "digilock", "digi" -> listOf(
                 "com.digilocker.android"
             )
 
@@ -755,7 +808,7 @@ class MainActivity : AppCompatActivity() {
                 "com.google.android.apps.photos"
             )
 
-            "files", "file" -> listOf(
+            "files", "file", "documents" -> listOf(
                 "com.sec.android.app.myfiles",
                 "com.google.android.documentsui"
             )
