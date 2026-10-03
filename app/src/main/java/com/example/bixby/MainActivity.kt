@@ -587,8 +587,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun openRequestedApp(command: String) {
         val appName = command
-            .removePrefix("open ")
-            .replace(Regex("""\b(application|app)\b"""), "")
+            .trim()
+            .replaceFirst(Regex("""^\\s*open\\s+""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\\b(application|app|please)\\b""", RegexOption.IGNORE_CASE), " ")
             .trim()
 
         if (appName.isBlank()) {
@@ -607,181 +608,85 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "App not found"
             Toast.makeText(
                 this,
-                "I couldn't find $appName on this phone.",
+                "I couldn't find a launchable app named $appName on this phone.",
                 Toast.LENGTH_SHORT
             ).show()
             return
         }
 
-        statusText.text = "Opening $appName"
-        safeStartActivity(launchIntent)
+        try {
+            startActivity(launchIntent)
+            statusText.text = "Opening $appName"
+        } catch (_: Exception) {
+            statusText.text = "Couldn't open $appName"
+            Toast.makeText(
+                this,
+                "I found $appName, but Android couldn't launch it.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun findLaunchIntentForApp(appName: String): Intent? {
-        val query = appName
-            .lowercase(Locale.ROOT)
-            .replace(Regex("""\b(application|app|please)\b"""), " ")
-            .replace(Regex("[^a-z0-9]+"), "")
-            .trim()
-
+        val query = normalizeAppLookupText(appName)
         if (query.isBlank()) return null
 
-        // STEP 1: Common-app package map first.
-        val commonAppPackages = mapOf(
-            "whatsapp" to listOf("com.whatsapp", "com.whatsapp.w4b"),
-            "whatsup" to listOf("com.whatsapp", "com.whatsapp.w4b"),
-            "whatsap" to listOf("com.whatsapp", "com.whatsapp.w4b"),
-            "youtube" to listOf("com.google.android.youtube"),
-            "youtub" to listOf("com.google.android.youtube"),
-            "chrome" to listOf("com.android.chrome"),
-            "googlechrome" to listOf("com.android.chrome"),
-            "gmail" to listOf("com.google.android.gm"),
-            "googlemail" to listOf("com.google.android.gm"),
-            "googlemaps" to listOf("com.google.android.apps.maps"),
-            "maps" to listOf("com.google.android.apps.maps"),
-            "google" to listOf("com.google.android.googlequicksearchbox"),
-            "googledrive" to listOf("com.google.android.apps.docs"),
-            "drive" to listOf("com.google.android.apps.docs"),
-            "googlephotos" to listOf("com.google.android.apps.photos"),
-            "photos" to listOf("com.google.android.apps.photos"),
-            "facebook" to listOf("com.facebook.katana"),
-            "instagram" to listOf("com.instagram.android"),
-            "messenger" to listOf("com.facebook.orca"),
-            "telegram" to listOf("org.telegram.messenger"),
-            "snapchat" to listOf("com.snapchat.android"),
-            "twitter" to listOf("com.twitter.android"),
-            "x" to listOf("com.twitter.android"),
-            "tiktok" to listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill"),
-            "linkedin" to listOf("com.linkedin.android"),
-            "reddit" to listOf("com.reddit.frontpage"),
-            "spotify" to listOf("com.spotify.music"),
-            "netflix" to listOf("com.netflix.mediaclient"),
-            "primevideo" to listOf("com.amazon.avod.thirdpartyclient"),
-            "amazon" to listOf(
-                "in.amazon.mShop.android.shopping",
-                "com.amazon.mShop.android.shopping"
-            ),
-            "flipkart" to listOf("com.flipkart.android"),
-            "myntra" to listOf("com.myntra.android"),
-            "swiggy" to listOf("in.swiggy.android"),
-            "zomato" to listOf("com.application.zomato"),
-            "paytm" to listOf("net.one97.paytm"),
-            "phonepe" to listOf("com.phonepe.app"),
-            "gpay" to listOf("com.google.android.apps.walletnfcrel"),
-            "googlepay" to listOf("com.google.android.apps.walletnfcrel"),
-            "calculator" to listOf(
-                "com.sec.android.app.popupcalculator",
-                "com.google.android.calculator",
-                "com.android.calculator2"
-            ),
-            "calc" to listOf(
-                "com.sec.android.app.popupcalculator",
-                "com.google.android.calculator",
-                "com.android.calculator2"
-            ),
-            "calendar" to listOf(
-                "com.samsung.android.calendar",
-                "com.google.android.calendar"
-            ),
-            "calender" to listOf(
-                "com.samsung.android.calendar",
-                "com.google.android.calendar"
-            ),
-            "music" to listOf(
-                "com.sec.android.app.music",
-                "com.google.android.apps.youtube.music"
-            ),
-            "youtubemusic" to listOf("com.google.android.apps.youtube.music"),
-            "gallery" to listOf(
-                "com.sec.android.gallery3d",
-                "com.google.android.apps.photos"
-            ),
-            "files" to listOf(
-                "com.sec.android.app.myfiles",
-                "com.google.android.documentsui"
-            ),
-            "file" to listOf(
-                "com.sec.android.app.myfiles",
-                "com.google.android.documentsui"
-            ),
-            "messages" to listOf(
-                "com.samsung.android.messaging",
-                "com.google.android.apps.messaging"
-            ),
-            "messaging" to listOf(
-                "com.samsung.android.messaging",
-                "com.google.android.apps.messaging"
-            ),
-            "contacts" to listOf(
-                "com.samsung.android.app.contacts",
-                "com.google.android.contacts"
-            ),
-            "clock" to listOf("com.sec.android.app.clockpackage"),
-            "camera" to listOf(
-                "com.sec.android.app.camera",
-                "com.google.android.GoogleCamera"
-            ),
-            "settings" to listOf("com.android.settings"),
-            "playstore" to listOf("com.android.vending"),
-            "googleplaystore" to listOf("com.android.vending"),
-            "digilocker" to listOf("com.digilocker.android"),
-            "digilock" to listOf("com.digilocker.android"),
-            "digi" to listOf("com.digilocker.android"),
-            "truecaller" to listOf("com.truecaller"),
-            "sharechat" to listOf("in.mohalla.sharechat"),
-            "jio" to listOf("com.jio.myjio"),
-            "myjio" to listOf("com.jio.myjio"),
-            "airtel" to listOf("com.myairtelapp"),
-            "hotstar" to listOf("in.startv.hotstar"),
-            "disneyhotstar" to listOf("in.startv.hotstar"),
-            "teams" to listOf("com.microsoft.teams"),
-            "outlook" to listOf("com.microsoft.office.outlook"),
-            "word" to listOf("com.microsoft.office.word"),
-            "excel" to listOf("com.microsoft.office.excel"),
-            "powerpoint" to listOf("com.microsoft.office.powerpoint"),
-            "zoom" to listOf("us.zoom.videomeetings"),
-            "skype" to listOf("com.skype.raider"),
-            "discord" to listOf("com.discord")
-        )
-
-        commonAppPackages[query]?.forEach { packageName ->
-            createPackageLaunchIntent(packageName)?.let { return it }
-        }
-
-        // STEP 2: Dynamic launcher-app lookup.
+        // Combine launcher activities and all packages visible to PackageManager.
         val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        val launchableApps = try {
+        val launcherActivities = try {
             packageManager.queryIntentActivities(launcherIntent, 0)
         } catch (_: Exception) {
             emptyList()
         }
 
-        for (info in launchableApps) {
-            val label = info.loadLabel(packageManager).toString()
-                .lowercase(Locale.ROOT)
-            val packageName = info.activityInfo.packageName
-                .lowercase(Locale.ROOT)
+        val installedApplications = try {
+            packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
+        } catch (_: Exception) {
+            emptyList()
+        }
 
-            if (label.contains(query) || packageName.contains(query)) {
-                createPackageLaunchIntent(info.activityInfo.packageName)?.let {
-                    return it
-                }
+        // One entry per package: package name -> display label.
+        val universalApps = linkedMapOf<String, String>()
 
-                return try {
-                    Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_LAUNCHER)
-                        setPackage(info.activityInfo.packageName)
-                        addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                        )
-                    }
-                } catch (_: Exception) {
-                    null
-                }
+        installedApplications.forEach { applicationInfo ->
+            val packageName = applicationInfo.packageName ?: return@forEach
+            val label = try {
+                packageManager.getApplicationLabel(applicationInfo).toString()
+            } catch (_: Exception) {
+                packageName
+            }
+            universalApps.putIfAbsent(packageName, label)
+        }
+
+        launcherActivities.forEach { resolveInfo ->
+            val packageName = resolveInfo.activityInfo?.packageName ?: return@forEach
+            val label = try {
+                resolveInfo.loadLabel(packageManager).toString()
+            } catch (_: Exception) {
+                packageName
+            }
+            universalApps.putIfAbsent(packageName, label)
+        }
+
+        val queryWords = appLookupWords(appName)
+
+        // Match the full spoken query first, then meaningful individual words.
+        for ((packageName, displayLabel) in universalApps) {
+            val normalizedLabel = normalizeAppLookupText(displayLabel)
+            val normalizedPackage = normalizeAppLookupText(packageName)
+
+            val matchesFullQuery =
+                normalizedLabel.contains(query) || normalizedPackage.contains(query)
+
+            val matchesQueryWord = queryWords.any { word ->
+                normalizedLabel.contains(word) || normalizedPackage.contains(word)
+            }
+
+            if (matchesFullQuery || matchesQueryWord) {
+                createPackageLaunchIntent(packageName)?.let { return it }
             }
         }
 
@@ -813,6 +718,18 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun normalizeAppLookupText(value: String): String =
+        value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+
+    private fun appLookupWords(value: String): List<String> {
+        val ignoredWords = setOf("open", "launch", "start", "application", "app", "please", "the")
+        return value.lowercase(Locale.ROOT)
+            .split(Regex("[^a-z0-9]+"))
+            .map { normalizeAppLookupText(it) }
+            .filter { it.length >= 3 && it !in ignoredWords }
+            .distinct()
     }
 
     private fun hasPermission(permission: String): Boolean =
