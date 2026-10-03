@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var greetingText: TextView
     private lateinit var pulseView: View
     private lateinit var orbView: View
+    private lateinit var equalizerBars: Array<View>
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -56,6 +57,12 @@ class MainActivity : AppCompatActivity() {
     private var pulseScaleAnimator: ValueAnimator? = null
     private var pulseAlphaAnimator: ValueAnimator? = null
     private var orbScaleAnimator: ValueAnimator? = null
+    private var equalizerAnimator: ValueAnimator? = null
+    private var orbState: OrbState = OrbState.IDLE
+
+    private enum class OrbState {
+        IDLE, LISTENING, PROCESSING
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,12 +73,22 @@ class MainActivity : AppCompatActivity() {
         greetingText = findViewById(R.id.greetingText)
         pulseView = findViewById(R.id.pulseView)
         orbView = findViewById(R.id.orbView)
+        equalizerBars = arrayOf(
+            findViewById(R.id.equalizerBar1),
+            findViewById(R.id.equalizerBar2),
+            findViewById(R.id.equalizerBar3),
+            findViewById(R.id.equalizerBar4),
+            findViewById(R.id.equalizerBar5),
+            findViewById(R.id.equalizerBar6),
+            findViewById(R.id.equalizerBar7)
+        )
 
         setupOrb()
         startPulseAnimation()
         setupMicButton()
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
+        setOrbState(OrbState.IDLE)
 
         micButton.setOnClickListener {
             startListening()
@@ -91,6 +108,17 @@ class MainActivity : AppCompatActivity() {
             setColor(Color.rgb(0, 242, 254))
         }
         pulseView.alpha = 0.22f
+
+        equalizerBars.forEach { bar ->
+            bar.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f
+                setColor(Color.rgb(0, 242, 254))
+            }
+            bar.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            bar.alpha = 0.55f
+            bar.scaleY = 0.35f
+        }
     }
 
     private fun setupMicButton() {
@@ -129,7 +157,7 @@ class MainActivity : AppCompatActivity() {
             override fun onReadyForSpeech(params: Bundle?) {
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
-                startPulseAnimation()
+                setOrbState(OrbState.LISTENING)
             }
 
             override fun onBeginningOfSpeech() {
@@ -137,19 +165,29 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onRmsChanged(rmsdB: Float) {
-                val scale = 1.0f + (rmsdB.coerceIn(0f, 12f) / 80f)
-                orbView.scaleX = scale
-                orbView.scaleY = scale
+                if (orbState == OrbState.LISTENING) {
+                    val level = rmsdB.coerceIn(0f, 12f) / 12f
+                    val scale = 1.0f + (level * 0.14f)
+                    orbView.scaleX = scale
+                    orbView.scaleY = scale
+                    equalizerBars.forEachIndexed { index, bar ->
+                        val phase = ((index + 1) % 4) * 0.04f
+                        bar.scaleY = (0.32f + level * (0.62f + phase)).coerceAtMost(1.35f)
+                        bar.alpha = (0.45f + level * 0.55f).coerceAtMost(1f)
+                    }
+                }
             }
 
             override fun onBufferReceived(buffer: ByteArray?) = Unit
 
             override fun onEndOfSpeech() {
                 statusText.text = "Processing..."
+                setOrbState(OrbState.PROCESSING)
             }
 
             override fun onError(error: Int) {
                 statusText.text = "Tap mic to try again"
+                setOrbState(OrbState.IDLE)
             }
 
             override fun onResults(results: Bundle?) {
@@ -163,6 +201,7 @@ class MainActivity : AppCompatActivity() {
                     greetingText.text = "You said: \"$command\""
                     executeCommand(command)
                 }
+                setOrbState(OrbState.IDLE)
             }
 
             override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -206,8 +245,8 @@ class MainActivity : AppCompatActivity() {
     private fun startPulseAnimation() {
         stopPulseAnimation()
 
-        pulseScaleAnimator = ValueAnimator.ofFloat(0.92f, 1.18f).apply {
-            duration = 700L
+        pulseScaleAnimator = ValueAnimator.ofFloat(0.94f, 1.12f).apply {
+            duration = 900L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             interpolator = LinearInterpolator()
@@ -219,8 +258,8 @@ class MainActivity : AppCompatActivity() {
             start()
         }
 
-        pulseAlphaAnimator = ValueAnimator.ofFloat(0.18f, 0.55f).apply {
-            duration = 700L
+        pulseAlphaAnimator = ValueAnimator.ofFloat(0.16f, 0.48f).apply {
+            duration = 900L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             interpolator = LinearInterpolator()
@@ -230,15 +269,43 @@ class MainActivity : AppCompatActivity() {
             start()
         }
 
-        orbScaleAnimator = ValueAnimator.ofFloat(0.94f, 1.06f).apply {
-            duration = 700L
+        orbScaleAnimator = ValueAnimator.ofFloat(0.97f, 1.04f).apply {
+            duration = 900L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             interpolator = LinearInterpolator()
             addUpdateListener { animator ->
-                val scale = animator.animatedValue as Float
-                orbView.scaleX = scale
-                orbView.scaleY = scale
+                if (orbState != OrbState.LISTENING) {
+                    val scale = animator.animatedValue as Float
+                    orbView.scaleX = scale
+                    orbView.scaleY = scale
+                }
+            }
+            start()
+        }
+
+        equalizerAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1100L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = LinearInterpolator()
+            addUpdateListener { animator ->
+                val wave = animator.animatedValue as Float
+                val stateFactor = when (orbState) {
+                    OrbState.IDLE -> 0.45f
+                    OrbState.LISTENING -> 0.95f
+                    OrbState.PROCESSING -> 1.2f
+                }
+                equalizerBars.forEachIndexed { index, bar ->
+                    val phase = ((index + 1) % 5) / 5f
+                    val value = (0.25f + ((wave + phase) % 1f) * 0.75f) * stateFactor
+                    bar.scaleY = value.coerceIn(0.22f, 1.35f)
+                    bar.alpha = when (orbState) {
+                        OrbState.IDLE -> 0.35f
+                        OrbState.LISTENING -> 0.75f
+                        OrbState.PROCESSING -> 0.95f
+                    }
+                }
             }
             start()
         }
@@ -248,16 +315,40 @@ class MainActivity : AppCompatActivity() {
         pulseScaleAnimator?.cancel()
         pulseAlphaAnimator?.cancel()
         orbScaleAnimator?.cancel()
+        equalizerAnimator?.cancel()
 
         pulseScaleAnimator = null
         pulseAlphaAnimator = null
         orbScaleAnimator = null
+        equalizerAnimator = null
 
         pulseView.scaleX = 1f
         pulseView.scaleY = 1f
         orbView.scaleX = 1f
         orbView.scaleY = 1f
         pulseView.alpha = 0.22f
+    }
+
+    private fun setOrbState(state: OrbState) {
+        orbState = state
+        when (state) {
+            OrbState.IDLE -> {
+                greetingText.text = if (greetingText.text.toString().startsWith("You said:")) {
+                    greetingText.text
+                } else {
+                    "Listening for commands..."
+                }
+                equalizerBars.forEach { it.alpha = 0.35f }
+            }
+            OrbState.LISTENING -> {
+                greetingText.text = "I'm listening"
+                equalizerBars.forEach { it.alpha = 0.75f }
+            }
+            OrbState.PROCESSING -> {
+                greetingText.text = "Thinking..."
+                equalizerBars.forEach { it.alpha = 0.95f }
+            }
+        }
     }
 
     private fun executeCommand(command: String) {
@@ -663,7 +754,17 @@ class MainActivity : AppCompatActivity() {
             "googleplay" to "com.android.vending",
             "googleplaystore" to "com.android.vending",
             "playstoregoogle" to "com.android.vending",
-            "camera" to "com.sec.android.app.camera"
+            "camera" to "com.sec.android.app.camera",
+            "gemini" to "com.google.android.apps.bard",
+            "googlegemini" to "com.google.android.apps.bard",
+            "googlebard" to "com.google.android.apps.bard",
+            "gpe" to "com.google.android.apps.nbu.paisa.user",
+            "googlepay" to "com.google.android.apps.nbu.paisa.user",
+            "gpay" to "com.google.android.apps.nbu.paisa.user",
+            "samsungnotes" to "com.samsung.android.app.notes",
+            "notes" to "com.samsung.android.app.notes",
+            "googlekeep" to "com.google.android.keep",
+            "keep" to "com.google.android.keep"
         )
 
         exactPackageAliases[query]?.let { packageName ->
@@ -711,6 +812,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         val queryWords = appLookupWords(appName)
+
+        // Strict semantic aliases stay ahead of generic label/package matching.
+        when (query) {
+            "notes" -> {
+                createPackageLaunchIntent("com.samsung.android.app.notes")?.let { return it }
+                createPackageLaunchIntent("com.google.android.keep")?.let { return it }
+            }
+            "gemini", "googlegemini", "googlebard" -> {
+                createPackageLaunchIntent("com.google.android.apps.bard")?.let { return it }
+            }
+            "gpe", "gpay", "googlepay" -> {
+                createPackageLaunchIntent("com.google.android.apps.nbu.paisa.user")?.let { return it }
+            }
+        }
 
         // WhatsApp can exist as the original app plus a Samsung Dual Messenger/App Clone.
         if (query == "whatsapp") {
@@ -775,7 +890,12 @@ class MainActivity : AppCompatActivity() {
             primary.putExtra(Intent.EXTRA_INITIAL_INTENTS, alternatives)
         }
 
-        return Intent.createChooser(primary, "Choose WhatsApp")
+        return Intent.createChooser(primary, "Choose WhatsApp").apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            )
+        }
     }
 
     private fun createPackageLaunchIntent(packageName: String): Intent? {
