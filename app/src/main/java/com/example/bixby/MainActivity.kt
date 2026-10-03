@@ -621,247 +621,102 @@ class MainActivity : AppCompatActivity() {
         val query = normalizeAppName(appName)
         if (query.isBlank()) return null
 
-        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+        val launcherQuery = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        val launcherActivities = try {
-            packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
+        val launchableApps = try {
+            packageManager.queryIntentActivities(launcherQuery, 0)
         } catch (_: Exception) {
             emptyList()
         }
 
-        val installedApps = try {
-            packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
-        } catch (_: Exception) {
-            emptyList()
+        // STEP 1A: Exact label/package match.
+        val exactMatch = launchableApps.firstOrNull { info ->
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
+
+            label == query || packageName == query
         }
 
-        data class AppCandidate(
-            val packageName: String,
-            val label: String,
-            val activityName: String?,
-            val score: Int
-        )
+        if (exactMatch != null) {
+            return createLauncherIntent(
+                exactMatch.activityInfo.packageName,
+                exactMatch.activityInfo.name
+            )
+        }
 
-        val candidates = linkedMapOf<String, AppCandidate>()
+        // STEP 1B: Contains label/package match.
+        val containsMatch = launchableApps.firstOrNull { info ->
+            val label = info.loadLabel(packageManager).toString().lowercase(Locale.ROOT)
+            val packageName = info.activityInfo.packageName.lowercase(Locale.ROOT)
 
-        fun addCandidate(
-            packageName: String,
-            label: String,
-            activityName: String? = null
-        ) {
-            val normalizedLabel = normalizeAppName(label)
-            val normalizedPackage = packageName.lowercase(Locale.ROOT)
-            val score = scoreAppMatch(query, normalizedLabel, normalizedPackage)
+            label.contains(query, ignoreCase = true) ||
+                packageName.contains(query, ignoreCase = true)
+        }
 
-            if (score <= 0) return
+        if (containsMatch != null) {
+            return createLauncherIntent(
+                containsMatch.activityInfo.packageName,
+                containsMatch.activityInfo.name
+            )
+        }
 
-            val current = candidates[packageName]
-            if (current == null || score > current.score) {
-                candidates[packageName] = AppCandidate(
-                    packageName = packageName,
-                    label = label,
-                    activityName = activityName,
-                    score = score
+        // STEP 2: Direct package fallback for common apps.
+        for (packageName in knownPackageAliases(query)) {
+            createPackageLaunchIntent(packageName)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun createLauncherIntent(
+        packageName: String,
+        activityName: String
+    ): Intent? {
+        return try {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setClassName(packageName, activityName)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                 )
             }
+        } catch (_: Exception) {
+            createPackageLaunchIntent(packageName)
         }
+    }
 
-        installedApps.forEach { info ->
-            addCandidate(
-                packageName = info.packageName,
-                label = info.loadLabel(packageManager).toString()
-            )
-        }
+    private fun createPackageLaunchIntent(packageName: String): Intent? {
+        if (packageName.isBlank()) return null
 
-        launcherActivities.forEach { info ->
-            addCandidate(
-                packageName = info.activityInfo.packageName,
-                label = info.loadLabel(packageManager).toString(),
-                activityName = info.activityInfo.name
-            )
-        }
-
-        val best = candidates.values.maxByOrNull { it.score }
-
-        if (best != null && best.score >= 35) {
-            val launcherActivity = launcherActivities.firstOrNull {
-                it.activityInfo.packageName == best.packageName &&
-                    (
-                        best.activityName == null ||
-                            it.activityInfo.name == best.activityName
-                        )
-            }
-
-            val launcherIntent = launcherActivity?.activityInfo?.let { activityInfo ->
-                Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                    setClassName(activityInfo.packageName, activityInfo.name)
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                    )
-                }
-            }
-
-            if (launcherIntent != null) return launcherIntent
-
-            packageManager.getLaunchIntentForPackage(best.packageName)?.apply {
+        try {
+            packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                 )
             }?.let { return it }
+        } catch (_: Exception) {
         }
 
-        return findKnownPackageLaunchIntent(query)
-    }
-
-    private fun scoreAppMatch(
-        query: String,
-        label: String,
-        packageName: String
-    ): Int {
-        if (query.isBlank()) return 0
-
-        val aliases = appAliases(query)
-        val queryTerms = linkedSetOf(query).apply {
-            addAll(queryTokens(query))
-            addAll(aliases)
-        }
-
-        val packageParts = packageName
-            .split('.')
-            .filter { it.isNotBlank() }
-
-        var best = 0
-
-        for (term in queryTerms) {
-            if (term.length < 2) continue
-
-            if (label == term) best = maxOf(best, 100)
-            if (packageName == term) best = maxOf(best, 98)
-
-            if (label.contains(term)) {
-                best = maxOf(best, 82 + minOf(12, term.length))
-            }
-
-            if (packageName.contains(term)) {
-                best = maxOf(best, 72 + minOf(10, term.length))
-            }
-
-            label.split(Regex("[^a-z0-9]+"))
-                .filter { it.isNotBlank() }
-                .forEach { labelToken ->
-                    if (labelToken == term) {
-                        best = maxOf(best, 96)
-                    } else if (labelToken.contains(term) || term.contains(labelToken)) {
-                        if (minOf(labelToken.length, term.length) >= 3) {
-                            best = maxOf(best, 68)
-                        }
-                    }
-
-                    val similarity = fuzzySimilarity(term, labelToken)
-                    if (similarity >= 0.78) {
-                        best = maxOf(best, (60 + similarity * 30).toInt())
-                    }
-                }
-
-            packageParts.forEach { packagePart ->
-                if (packagePart == term) {
-                    best = maxOf(best, 92)
-                } else if (
-                    packagePart.contains(term) &&
-                    term.length >= 3
-                ) {
-                    best = maxOf(best, 70)
-                }
-            }
-
-            val labelSimilarity = fuzzySimilarity(term, label)
-            if (labelSimilarity >= 0.72) {
-                best = maxOf(best, (45 + labelSimilarity * 40).toInt())
-            }
-        }
-
-        return best
-    }
-
-    private fun fuzzySimilarity(first: String, second: String): Double {
-        if (first.isBlank() || second.isBlank()) return 0.0
-        if (first == second) return 1.0
-        if (first.contains(second) || second.contains(first)) return 0.92
-
-        val distance = levenshteinDistance(first, second)
-        val maxLength = maxOf(first.length, second.length)
-
-        return if (maxLength == 0) 1.0
-        else 1.0 - distance.toDouble() / maxLength.toDouble()
-    }
-
-    private fun levenshteinDistance(first: String, second: String): Int {
-        if (first == second) return 0
-        if (first.isEmpty()) return second.length
-        if (second.isEmpty()) return first.length
-
-        var previous = IntArray(second.length + 1) { it }
-
-        for (i in first.indices) {
-            val current = IntArray(second.length + 1)
-            current[0] = i + 1
-
-            for (j in second.indices) {
-                val cost = if (first[i] == second[j]) 0 else 1
-                current[j + 1] = minOf(
-                    current[j] + 1,
-                    previous[j + 1] + 1,
-                    previous[j] + cost
+        return try {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(packageName)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                 )
             }
-
-            previous = current
+        } catch (_: Exception) {
+            null
         }
-
-        return previous[second.length]
     }
 
-    private fun queryTokens(value: String): List<String> =
-        value.split(Regex("[^a-z0-9]+"))
-            .filter { it.isNotBlank() }
-
-    private fun appAliases(query: String): List<String> =
+    private fun knownPackageAliases(query: String): List<String> =
         when (query) {
-            "whatsapp", "whatsup" -> listOf("whatsapp")
-            "youtube" -> listOf("youtube")
-            "chrome", "googlechrome" -> listOf("chrome")
-            "calculator", "calc", "calculation" -> listOf("calculator")
-            "calendar", "calender" -> listOf("calendar")
-            "music", "musics", "media", "player" -> listOf(
-                "music",
-                "media",
-                "player"
-            )
-            "digilocker", "digi" -> listOf("digilocker", "digi")
-            "gallery", "photos", "photo" -> listOf(
-                "gallery",
-                "photos"
-            )
-            "files", "file" -> listOf(
-                "files",
-                "file",
-                "documents"
-            )
-            "messages", "messaging", "message" -> listOf(
-                "messages",
-                "messaging",
-                "message"
-            )
-            else -> emptyList()
-        }
-
-    private fun findKnownPackageLaunchIntent(query: String): Intent? {
-        val candidates = when (query) {
             "whatsapp", "whatsup" -> listOf(
                 "com.whatsapp",
                 "com.whatsapp.w4b"
@@ -886,13 +741,13 @@ class MainActivity : AppCompatActivity() {
                 "com.google.android.calendar"
             )
 
+            "digilocker", "digi" -> listOf(
+                "com.digilocker.android"
+            )
+
             "music", "musics", "media", "player" -> listOf(
                 "com.sec.android.app.music",
                 "com.google.android.apps.youtube.music"
-            )
-
-            "digilocker", "digi" -> listOf(
-                "com.digilocker.android"
             )
 
             "gallery", "photos", "photo" -> listOf(
@@ -912,16 +767,6 @@ class MainActivity : AppCompatActivity() {
 
             else -> emptyList()
         }
-
-        return candidates.firstNotNullOfOrNull {
-            packageManager.getLaunchIntentForPackage(it)?.apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                )
-            }
-        }
-    }
 
     private fun normalizeAppName(value: String): String =
         value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
