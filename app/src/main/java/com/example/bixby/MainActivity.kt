@@ -47,7 +47,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var greetingText: TextView
     private lateinit var pulseView: View
     private lateinit var orbView: View
-    private lateinit var equalizerBars: Array<View>
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -57,7 +56,6 @@ class MainActivity : AppCompatActivity() {
     private var pulseScaleAnimator: ValueAnimator? = null
     private var pulseAlphaAnimator: ValueAnimator? = null
     private var orbScaleAnimator: ValueAnimator? = null
-    private var equalizerAnimator: ValueAnimator? = null
     private var orbState: OrbState = OrbState.IDLE
 
     private enum class OrbState {
@@ -73,16 +71,6 @@ class MainActivity : AppCompatActivity() {
         greetingText = findViewById(R.id.greetingText)
         pulseView = findViewById(R.id.pulseView)
         orbView = findViewById(R.id.orbView)
-        equalizerBars = arrayOf(
-            findViewById(R.id.equalizerBar1),
-            findViewById(R.id.equalizerBar2),
-            findViewById(R.id.equalizerBar3),
-            findViewById(R.id.equalizerBar4),
-            findViewById(R.id.equalizerBar5),
-            findViewById(R.id.equalizerBar6),
-            findViewById(R.id.equalizerBar7)
-        )
-
         setupOrb()
         startPulseAnimation()
         setupMicButton()
@@ -108,18 +96,6 @@ class MainActivity : AppCompatActivity() {
             setColor(Color.rgb(0, 242, 254))
         }
         pulseView.alpha = 0.22f
-
-        equalizerBars.forEach { bar ->
-            bar.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 8f
-                setColor(Color.rgb(0, 242, 254))
-            }
-            bar.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            bar.alpha = 0.55f
-            bar.scaleY = 0.35f
-        }
-    }
 
     private fun setupMicButton() {
         micButton.background = GradientDrawable().apply {
@@ -170,11 +146,6 @@ class MainActivity : AppCompatActivity() {
                     val scale = 1.0f + (level * 0.14f)
                     orbView.scaleX = scale
                     orbView.scaleY = scale
-                    equalizerBars.forEachIndexed { index, bar ->
-                        val phase = ((index + 1) % 4) * 0.04f
-                        bar.scaleY = (0.32f + level * (0.62f + phase)).coerceAtMost(1.35f)
-                        bar.alpha = (0.45f + level * 0.55f).coerceAtMost(1f)
-                    }
                 }
             }
 
@@ -284,43 +255,14 @@ class MainActivity : AppCompatActivity() {
             start()
         }
 
-        equalizerAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1100L
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = LinearInterpolator()
-            addUpdateListener { animator ->
-                val wave = animator.animatedValue as Float
-                val stateFactor = when (orbState) {
-                    OrbState.IDLE -> 0.45f
-                    OrbState.LISTENING -> 0.95f
-                    OrbState.PROCESSING -> 1.2f
-                }
-                equalizerBars.forEachIndexed { index, bar ->
-                    val phase = ((index + 1) % 5) / 5f
-                    val value = (0.25f + ((wave + phase) % 1f) * 0.75f) * stateFactor
-                    bar.scaleY = value.coerceIn(0.22f, 1.35f)
-                    bar.alpha = when (orbState) {
-                        OrbState.IDLE -> 0.35f
-                        OrbState.LISTENING -> 0.75f
-                        OrbState.PROCESSING -> 0.95f
-                    }
-                }
-            }
-            start()
-        }
-    }
-
     private fun stopPulseAnimation() {
         pulseScaleAnimator?.cancel()
         pulseAlphaAnimator?.cancel()
         orbScaleAnimator?.cancel()
-        equalizerAnimator?.cancel()
 
         pulseScaleAnimator = null
         pulseAlphaAnimator = null
         orbScaleAnimator = null
-        equalizerAnimator = null
 
         pulseView.scaleX = 1f
         pulseView.scaleY = 1f
@@ -338,15 +280,12 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     "Listening for commands..."
                 }
-                equalizerBars.forEach { it.alpha = 0.35f }
             }
             OrbState.LISTENING -> {
                 greetingText.text = "I'm listening"
-                equalizerBars.forEach { it.alpha = 0.75f }
             }
             OrbState.PROCESSING -> {
                 greetingText.text = "Thinking..."
-                equalizerBars.forEach { it.alpha = 0.95f }
             }
         }
     }

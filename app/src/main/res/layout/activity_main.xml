@@ -54,24 +54,6 @@
                 android:layout_height="170dp"
                 android:layout_gravity="center" />
 
-            <LinearLayout
-                android:id="@+id/equalizerView"
-                android:layout_width="176dp"
-                android:layout_height="76dp"
-                android:layout_gravity="center|bottom"
-                android:gravity="center"
-                android:orientation="horizontal"
-                android:alpha="0.9">
-
-                <View android:id="@+id/equalizerBar1" android:layout_width="8dp" android:layout_height="28dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar2" android:layout_width="8dp" android:layout_height="40dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar3" android:layout_width="8dp" android:layout_height="54dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar4" android:layout_width="8dp" android:layout_height="64dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar5" android:layout_width="8dp" android:layout_height="54dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar6" android:layout_width="8dp" android:layout_height="40dp" android:layout_marginHorizontal="5dp" />
-                <View android:id="@+id/equalizerBar7" android:layout_width="8dp" android:layout_height="28dp" android:layout_marginHorizontal="5dp" />
-            </LinearLayout>
-
             <View
                 android:id="@+id/orbView"
                 android:layout_width="104dp"
@@ -120,7 +102,7 @@
 
         <ImageButton
             android:id="@+id/micButton"
-            android:layout_width="68dp"
+            android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="@drawable/pill_mic_button"
             android:src="@android:drawable/ic_btn_speak_now"
