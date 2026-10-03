@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
             setColor(Color.rgb(0, 242, 254))
         }
         pulseView.alpha = 0.22f
+    }
 
     private fun setupMicButton() {
         micButton.background = GradientDrawable().apply {
@@ -254,6 +255,7 @@ class MainActivity : AppCompatActivity() {
             }
             start()
         }
+    }
 
     private fun stopPulseAnimation() {
         pulseScaleAnimator?.cancel()
