@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val cmd = matches[0].lowercase(Locale.ROOT).trim()
-                    greetingText.text = "You said: "$cmd""
+                    greetingText.text = "You said: \"$cmd\""
                     executeCommand(cmd)
                 }
             }
