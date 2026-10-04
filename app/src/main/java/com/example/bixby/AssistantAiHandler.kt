@@ -12,7 +12,8 @@ class AssistantAiHandler(private val context: android.content.Context) {
     private val conversation = JSONArray()
 
     suspend fun generateResponse(prompt: String): Result<String> = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY.trim()
+        val apiKey = "AQ.Ab8RN6IhAj84YcpR39_XhSDmAmVEtUYQY12ZSbyolUxjyJHrvA"
+        
         if (apiKey.isBlank()) {
             return@withContext Result.failure(
                 IllegalStateException("Gemini API key is not configured.")
