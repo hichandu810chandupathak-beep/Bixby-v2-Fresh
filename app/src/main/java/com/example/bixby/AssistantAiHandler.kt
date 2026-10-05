@@ -33,19 +33,18 @@ class AssistantAiHandler(private val context: android.content.Context) {
                 ))
             }
 
-            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
+            val url = URL(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+)
 
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15000
-                readTimeout = 30000
-                setRequestProperty("Content-Type", "application/json")
-                doOutput = true
-            }
-
-            connection.outputStream.use {
-                it.write(requestBody.toString().toByteArray(Charsets.UTF_8))
-            }
+val connection = (url.openConnection() as HttpURLConnection).apply {
+    requestMethod = "POST"
+    connectTimeout = 15000
+    readTimeout = 30000
+    setRequestProperty("Content-Type", "application/json")
+    setRequestProperty("Authorization", "Bearer $apiKey")
+    doOutput = true
+}
 
             val code = connection.responseCode
             val responseBody = if (code in 200..299) {
