@@ -10,9 +10,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,23 +31,9 @@ jobs:
         with:
           gradle-version: '8.1.1'
 
-      - name: Check Gemini secret status
-        shell: bash
-        run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "::warning::GEMINI_API_KEY is not configured. APK will still be built, but Gemini AI requests will not work until the repository secret is added."
-          else
-            echo "GEMINI_API_KEY is available to the build environment."
-          fi
-
       - name: Build debug APK
         shell: bash
-        run: |
-          if [ -n "$GEMINI_API_KEY" ]; then
-            gradle assembleDebug -PGEMINI_API_KEY="$GEMINI_API_KEY"
-          else
-            gradle assembleDebug
-          fi
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
