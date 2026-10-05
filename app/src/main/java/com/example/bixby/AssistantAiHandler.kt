@@ -14,11 +14,6 @@ class AssistantAiHandler(private val context: android.content.Context) {
     suspend fun generateResponse(prompt: String): Result<String> = withContext(Dispatchers.IO) {
         val apiKey = "AQ.Ab8RN6IhAj84YcpR39_XhSDmAmVEtUYQY12ZSbyolUxjyJHrvA"
         
-        if (apiKey.isBlank()) {
-            return@withContext Result.failure(
-                IllegalStateException("Gemini API key is not configured.")
-            )
-        }
         try {
             val requestBody = JSONObject().apply {
                 put("system_instruction", JSONObject().put(
@@ -38,9 +33,8 @@ class AssistantAiHandler(private val context: android.content.Context) {
                 ))
             }
 
-            val url = URL(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
-            )
+            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
+
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15000
