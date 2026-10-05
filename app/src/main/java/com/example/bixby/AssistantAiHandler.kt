@@ -38,14 +38,14 @@ class AssistantAiHandler(private val context: android.content.Context) {
                 ))
             }
 
-            val connection = (URL(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
-            ).openConnection() as HttpURLConnection).apply {
+            val url = URL(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+            )
+            val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15000
                 readTimeout = 30000
                 setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("x-goog-api-key", apiKey)
                 doOutput = true
             }
 
