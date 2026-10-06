@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -12,10 +13,15 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.content.pm.PackageManager
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.ImageButton
+import java.util.Locale
 
 class BixbyFloatingAccessService : Service() {
 
@@ -24,12 +30,16 @@ class BixbyFloatingAccessService : Service() {
         private const val NOTIFICATION_ID = 2202
         private const val PREFS = "bixby_floating_access"
         private const val PREF_ENABLED = "enabled"
+        const val ACTION_RECOGNIZED_COMMAND = "com.example.bixby.action.FLOATING_RECOGNIZED_COMMAND"
+        const val EXTRA_RECOGNIZED_COMMAND = "com.example.bixby.extra.FLOATING_RECOGNIZED_COMMAND"
     }
 
     private var windowManager: WindowManager? = null
     private var windowContext: Context? = null
     private var floatingButton: ImageButton? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var listening = false
 
     override fun onCreate() {
         super.onCreate()
@@ -68,6 +78,7 @@ class BixbyFloatingAccessService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        setupSpeechRecognizer()
         showFloatingButton()
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putBoolean(PREF_ENABLED, true)
@@ -85,6 +96,12 @@ class BixbyFloatingAccessService : Service() {
             } catch (_: Exception) {
             }
         }
+        speechRecognizer?.let { recognizer ->
+            try { recognizer.cancel() } catch (_: Exception) { }
+            try { recognizer.destroy() } catch (_: Exception) { }
+        }
+        speechRecognizer = null
+        listening = false
         floatingButton = null
         windowManager = null
         windowContext = null
@@ -219,20 +236,117 @@ class BixbyFloatingAccessService : Service() {
     }
 
     private fun triggerAssistant() {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            )
-            putExtra(MainActivity.EXTRA_START_LISTENING, true)
-            putExtra(MainActivity.EXTRA_BACKGROUND_LISTENING, true)
+        startBackgroundListening()
+    }
+
+    private fun setupSpeechRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) return
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) {
+                listening = true
+                updateNotification("Listening for your command")
+            }
+
+            override fun onBeginningOfSpeech() {
+                updateNotification("Listening…")
+            }
+
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() {
+                listening = false
+                updateNotification("Processing command")
+            }
+
+            override fun onError(error: Int) {
+                listening = false
+                updateNotification("Bixby is ready from any screen")
+            }
+
+            override fun onResults(results: android.os.Bundle?) {
+                listening = false
+                val command = results
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+
+                if (command != null) sendRecognizedCommand(command)
+                updateNotification("Bixby is ready from any screen")
+            }
+
+            override fun onPartialResults(partialResults: android.os.Bundle?) = Unit
+            override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
+        })
+    }
+
+    private fun startBackgroundListening() {
+        if (listening) {
+            try { speechRecognizer?.cancel() } catch (_: Exception) { }
+            listening = false
+            updateNotification("Bixby is ready from any screen")
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            updateNotification("Microphone permission required")
+            return
+        }
+
+        val recognizer = speechRecognizer ?: return
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("hi-IN", "en-IN"))
+            }
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
         }
 
         try {
-            startActivity(intent)
+            recognizer.startListening(intent)
         } catch (_: Exception) {
+            listening = false
+            updateNotification("Couldn't start microphone")
         }
+    }
+
+    private fun sendRecognizedCommand(command: String) {
+        val broadcast = Intent(ACTION_RECOGNIZED_COMMAND).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_RECOGNIZED_COMMAND, command)
+        }
+        sendBroadcast(broadcast)
+
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(EXTRA_RECOGNIZED_COMMAND, command)
+            .apply()
+    }
+
+    private fun updateNotification(text: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val notificationBuilder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        manager.notify(
+            NOTIFICATION_ID,
+            notificationBuilder
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("Bixby floating access")
+                .setContentText(text)
+                .setOngoing(true)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .build()
+        )
     }
 
     private fun createNotificationChannel() {
