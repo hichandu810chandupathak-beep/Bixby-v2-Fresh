@@ -450,7 +450,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Opening system assistant..."
+        statusText.text = "Connecting..."
         setOrbState(OrbState.PROCESSING)
 
         if (AiVoiceBridge.launchSystemConversation(this, command)) {
@@ -459,13 +459,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        statusText.text = "System assistant unavailable"
-        Toast.makeText(
-            this,
-            "No system voice assistant is available on this phone.",
-            Toast.LENGTH_LONG
-        ).show()
-        setOrbState(OrbState.IDLE)
+        val localResponse = OfflineChatHandler.respond(command)
+        statusText.text = "Offline mode"
+        greetingText.text = localResponse
+        speakResponse(localResponse)
     }
 
     private fun speakResponse(response: String) {
