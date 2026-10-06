@@ -46,6 +46,10 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
     doOutput = true
 }
 
+            connection.outputStream.use { output ->
+                output.write(requestBody.toString().toByteArray(Charsets.UTF_8))
+            }
+
             val code = connection.responseCode
             val responseBody = if (code in 200..299) {
                 connection.inputStream.bufferedReader().use { it.readText() }
