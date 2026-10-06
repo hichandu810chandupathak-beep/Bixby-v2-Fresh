@@ -90,6 +90,10 @@ class MainActivity : AppCompatActivity() {
                 textToSpeech.setSpeechRate(0.96f)
             }
         }
+        if (AiVoiceBridge.isVoiceActivation(intent)) {
+            window.decorView.post { speakWelcomeSequence() }
+        }
+
         setupOrb()
         startPulseAnimation()
         setupMicButton()
@@ -167,6 +171,44 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             statusText.text = "Ready"
         }
+    }
+
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        val bridgedCommand = AiVoiceBridge.extractCommand(intent)
+        if (!bridgedCommand.isNullOrBlank()) {
+            greetingText.text = "You said: \"$bridgedCommand\""
+            executeCommand(bridgedCommand.lowercase(Locale.ROOT))
+        } else if (AiVoiceBridge.isVoiceActivation(intent)) {
+            speakWelcomeSequence()
+        }
+    }
+
+    private fun speakWelcomeSequence() {
+        if (!ttsReady || !::textToSpeech.isInitialized) return
+
+        textToSpeech.stop()
+        textToSpeech.speak(
+            "Welcome.",
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "welcome_1"
+        )
+        textToSpeech.speak(
+            "Hi, I am your assistant.",
+            TextToSpeech.QUEUE_ADD,
+            null,
+            "welcome_2"
+        )
+        textToSpeech.speak(
+            "How can I help you?",
+            TextToSpeech.QUEUE_ADD,
+            null,
+            "welcome_3"
+        )
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -401,26 +443,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Thinking..."
+        statusText.text = "Opening system assistant..."
         setOrbState(OrbState.PROCESSING)
-        commandScope.launch {
-            val result = aiHandler.generateResponse(command)
-            if (isFinishing || isDestroyed) return@launch
 
-            result.onSuccess { response ->
-                greetingText.text = response
-                statusText.text = "Ready"
-                speakResponse(response)
-            }.onFailure { error ->
-                statusText.text = "AI unavailable"
-                Toast.makeText(
-                    this@MainActivity,
-                    error.message ?: "Couldn't connect to AI.",
-                    Toast.LENGTH_LONG
-                ).show()
-                setOrbState(OrbState.IDLE)
-            }
+        if (AiVoiceBridge.launchSystemConversation(this, command)) {
+            statusText.text = "Ready"
+            setOrbState(OrbState.IDLE)
+            return
         }
+
+        statusText.text = "System assistant unavailable"
+        Toast.makeText(
+            this,
+            "No system voice assistant is available on this phone.",
+            Toast.LENGTH_LONG
+        ).show()
+        setOrbState(OrbState.IDLE)
     }
 
     private fun speakResponse(response: String) {

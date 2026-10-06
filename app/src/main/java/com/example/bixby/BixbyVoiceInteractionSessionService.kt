@@ -14,9 +14,14 @@ private class BixbyVoiceInteractionSession(
 ) : VoiceInteractionSession(context) {
     override fun onShow(args: android.os.Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+
         startVoiceActivity(
             Intent(context, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                putExtra(AiVoiceBridge.EXTRA_WELCOME, true)
             }
         )
     }

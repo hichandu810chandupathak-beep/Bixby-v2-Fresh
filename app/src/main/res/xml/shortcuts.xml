@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <capability
+        android:name="custom.actions.intent.BIXBY_COMMAND"
+        app:queryPatterns="@array/bixby_voice_command_queries">
+
+        <intent
+            android:action="com.example.bixby.action.VOICE_COMMAND"
+            android:targetPackage="com.example.bixby"
+            android:targetClass="com.example.bixby.MainActivity">
+
+            <parameter
+                android:name="command"
+                android:key="command"
+                android:mimeType="https://schema.org/Text"
+                android:required="true" />
+        </intent>
+
+        <intent
+            android:action="com.example.bixby.action.VOICE_COMMAND"
+            android:targetPackage="com.example.bixby"
+            android:targetClass="com.example.bixby.MainActivity" />
+    </capability>
+</shortcuts>

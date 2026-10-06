@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="bixby_voice_command_queries">
+        <item>open $command</item>
+        <item>launch $command</item>
+        <item>start $command</item>
+        <item>call $command</item>
+        <item>phone $command</item>
+        <item>turn on $command</item>
+        <item>turn off $command</item>
+        <item>enable $command</item>
+        <item>disable $command</item>
+        <item>ask $command</item>
+        <item>tell me $command</item>
+        <item>do $command</item>
+    </string-array>
+</resources>
