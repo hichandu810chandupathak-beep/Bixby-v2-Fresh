@@ -4,6 +4,8 @@ import android.Manifest
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.app.role.RoleManager
 import android.graphics.Color
@@ -65,6 +67,14 @@ class MainActivity : AppCompatActivity() {
     private var pendingFlashlightCommand: String? = null
     private var flashlightOn = false
 
+    private val floatingVoiceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            val command = intent?.getStringExtra(BixbyFloatingAccessService.EXTRA_RECOGNIZED_COMMAND)?.trim()?.takeIf { it.isNotEmpty() } ?: return
+            greetingText.text = "You said: \"$command\""
+            executeCommand(command.lowercase(Locale.ROOT))
+        }
+    }
+
     private val commandScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pulseScaleAnimator: ValueAnimator? = null
     private var pulseAlphaAnimator: ValueAnimator? = null
@@ -120,6 +130,7 @@ class MainActivity : AppCompatActivity() {
         requestRequiredPermissionsIfNeeded()
         requestAssistantRoleIfAvailable()
         setOrbState(OrbState.IDLE)
+        registerFloatingVoiceReceiver()
 
         if (startListeningFromExternal) {
             window.decorView.post {
@@ -498,12 +509,6 @@ class MainActivity : AppCompatActivity() {
                 greetingText.text = response
                 speakResponse(response)
             }.onFailure {
-                if (AiVoiceBridge.launchSystemConversation(this@MainActivity, command)) {
-                    statusText.text = "System assistant"
-                    setOrbState(OrbState.IDLE)
-                    return@launch
-                }
-
                 val localResponse = OfflineChatHandler.respond(command)
                 statusText.text = "Offline mode"
                 greetingText.text = localResponse
@@ -1182,7 +1187,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun registerFloatingVoiceReceiver() {
+        val filter = IntentFilter(BixbyFloatingAccessService.ACTION_RECOGNIZED_COMMAND)
+        ContextCompat.registerReceiver(this, floatingVoiceReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
     override fun onDestroy() {
+        try { unregisterReceiver(floatingVoiceReceiver) } catch (_: Exception) { }
         try {
             speechRecognizer.destroy()
         } catch (_: Exception) {
