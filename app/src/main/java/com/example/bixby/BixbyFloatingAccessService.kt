@@ -124,7 +124,7 @@ class BixbyFloatingAccessService : Service() {
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
             contentDescription = "Bixby microphone"
-            gravity = Gravity.CENTER
+            setGravity(Gravity.CENTER)
             isClickable = true
             isFocusable = false
             background = GradientDrawable(
