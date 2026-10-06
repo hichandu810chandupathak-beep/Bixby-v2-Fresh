@@ -77,10 +77,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
         val startListeningFromExternal = intent?.getBooleanExtra(EXTRA_START_LISTENING, false) == true
         val backgroundListening = intent?.getBooleanExtra(EXTRA_BACKGROUND_LISTENING, false) == true
+
+        if (backgroundListening) {
+            window.setBackgroundDrawableResource(android.R.color.transparent)
+            window.decorView.alpha = 0f
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            )
+            overridePendingTransition(0, 0)
+        }
+
+        setContentView(R.layout.activity_main)
 
         micButton = findViewById(R.id.micButton)
         statusText = findViewById(R.id.statusText)
@@ -113,13 +123,6 @@ class MainActivity : AppCompatActivity() {
 
         if (startListeningFromExternal) {
             window.decorView.post {
-                if (backgroundListening) {
-                    window.decorView.alpha = 0f
-                    window.setFlags(
-                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                    )
-                }
                 startListening()
                 if (backgroundListening) moveTaskToBack(true)
             }
@@ -495,6 +498,12 @@ class MainActivity : AppCompatActivity() {
                 greetingText.text = response
                 speakResponse(response)
             }.onFailure {
+                if (AiVoiceBridge.launchSystemConversation(this@MainActivity, command)) {
+                    statusText.text = "System assistant"
+                    setOrbState(OrbState.IDLE)
+                    return@launch
+                }
+
                 val localResponse = OfflineChatHandler.respond(command)
                 statusText.text = "Offline mode"
                 greetingText.text = localResponse
@@ -510,7 +519,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val locale = if (isHindiText(response)) Locale("hi", "IN") else Locale("en", "IN")
-        textToSpeech.language = locale
+        val languageResult = textToSpeech.setLanguage(locale)
+        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
+            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            textToSpeech.language = Locale.ENGLISH
+        }
         val maleVoice = textToSpeech.voices
             .asSequence()
             .filter { it.locale.language == locale.language }
