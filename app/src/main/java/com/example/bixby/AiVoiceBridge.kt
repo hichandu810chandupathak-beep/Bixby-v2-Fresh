@@ -3,7 +3,7 @@ package com.example.bixby
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.provider.SearchManager
+import android.app.SearchManager
 
 object AiVoiceBridge {
     const val ACTION_VOICE_COMMAND = "com.example.bixby.action.VOICE_COMMAND"
