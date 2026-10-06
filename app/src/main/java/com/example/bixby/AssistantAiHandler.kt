@@ -12,9 +12,14 @@ class AssistantAiHandler(private val context: android.content.Context) {
     private val conversation = JSONArray()
 
     suspend fun generateResponse(prompt: String): Result<String> = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        
+        val apiKey = BuildConfig.GEMINI_API_KEY.trim()
+
         try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("Gemini API key is missing.")
+                )
+            }
             val requestBody = JSONObject().apply {
                 put("system_instruction", JSONObject().put(
                     "parts", JSONArray().put(JSONObject().put(
@@ -41,13 +46,19 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
     requestMethod = "POST"
     connectTimeout = 15000
     readTimeout = 30000
-    setRequestProperty("Content-Type", "application/json")
-    setRequestProperty("x-goog-api-key", apiKey)
+    useCaches = false
+    doInput = true
     doOutput = true
+    setRequestProperty("Accept", "application/json")
+    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+    setRequestProperty("x-goog-api-key", apiKey)
 }
 
+            val requestBytes = requestBody.toString().toByteArray(Charsets.UTF_8)
+            connection.setFixedLengthStreamingMode(requestBytes.size)
             connection.outputStream.use { output ->
-                output.write(requestBody.toString().toByteArray(Charsets.UTF_8))
+                output.write(requestBytes)
+                output.flush()
             }
 
             val code = connection.responseCode
