@@ -28,7 +28,9 @@ jobs:
       run: chmod +x gradlew || true
 
     - name: Build with Gradle
-      run: gradle assembleDebug
+      run: |
+        sed -i 's/import android\.provider\.SearchManager/import android.app.SearchManager/' app/src/main/java/com/example/bixby/AiVoiceBridge.kt
+        gradle assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
