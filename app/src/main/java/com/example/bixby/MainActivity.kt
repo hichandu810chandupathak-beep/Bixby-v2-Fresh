@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_CONTACTS = 103
         private const val REQUEST_STARTUP_PERMISSIONS = 104
         private const val REQUEST_ASSISTANT_ROLE = 105
+        const val EXTRA_START_LISTENING = "com.example.bixby.extra.START_LISTENING"
     }
 
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -77,6 +78,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        val startListeningFromExternal = intent?.getBooleanExtra(EXTRA_START_LISTENING, false) == true
+
         micButton = findViewById(R.id.micButton)
         statusText = findViewById(R.id.statusText)
         greetingText = findViewById(R.id.greetingText)
@@ -104,6 +107,10 @@ class MainActivity : AppCompatActivity() {
         requestRequiredPermissionsIfNeeded()
         requestAssistantRoleIfAvailable()
         setOrbState(OrbState.IDLE)
+
+        if (startListeningFromExternal) {
+            window.decorView.post { startListening() }
+        }
 
         micButton.setOnClickListener {
             startListening()
@@ -181,10 +188,9 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
-        val bridgedCommand = AiVoiceBridge.extractCommand(intent)
-        if (!bridgedCommand.isNullOrBlank()) {
-            greetingText.text = "You said: \"$bridgedCommand\""
-            executeCommand(bridgedCommand.lowercase(Locale.ROOT))
+        val startListeningFromExternal = intent?.getBooleanExtra(EXTRA_START_LISTENING, false) == true
+        if (startListeningFromExternal) {
+            window.decorView.post { startListening() }
         } else if (AiVoiceBridge.isVoiceActivation(intent)) {
             if (ttsReady) {
                 speakWelcomeSequence()
@@ -450,17 +456,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Connecting..."
+        statusText.text = "Offline mode"
         setOrbState(OrbState.PROCESSING)
 
-        if (AiVoiceBridge.launchSystemConversation(this, command)) {
-            statusText.text = "Ready"
-            setOrbState(OrbState.IDLE)
-            return
-        }
-
         val localResponse = OfflineChatHandler.respond(command)
-        statusText.text = "Offline mode"
         greetingText.text = localResponse
         speakResponse(localResponse)
     }

@@ -220,24 +220,18 @@ class BixbyFloatingAccessService : Service() {
     }
 
     private fun triggerAssistant() {
-        val intent = Intent(Intent.ACTION_ASSIST).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+            putExtra(MainActivity.EXTRA_START_LISTENING, true)
         }
 
         try {
             startActivity(intent)
         } catch (_: Exception) {
-            val fallback = Intent(this, MainActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
-            }
-            try {
-                startActivity(fallback)
-            } catch (_: Exception) {
-            }
         }
     }
 
