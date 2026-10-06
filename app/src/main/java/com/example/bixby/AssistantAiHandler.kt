@@ -12,7 +12,7 @@ class AssistantAiHandler(private val context: android.content.Context) {
     private val conversation = JSONArray()
 
     suspend fun generateResponse(prompt: String): Result<String> = withContext(Dispatchers.IO) {
-        val apiKey = "AQ.Ab8RN6IhAj84YcpR39_XhSDmAmVEtUYQY12ZSbyolUxjyJHrvA"
+        val apiKey = BuildConfig.GEMINI_API_KEY
         
         try {
             val requestBody = JSONObject().apply {
@@ -34,7 +34,7 @@ class AssistantAiHandler(private val context: android.content.Context) {
             }
 
             val url = URL(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 )
 
 val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -42,7 +42,7 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
     connectTimeout = 15000
     readTimeout = 30000
     setRequestProperty("Content-Type", "application/json")
-    setRequestProperty("Authorization", "Bearer $apiKey")
+    setRequestProperty("x-goog-api-key", apiKey)
     doOutput = true
 }
 
