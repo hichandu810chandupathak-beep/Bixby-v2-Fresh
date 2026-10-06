@@ -146,7 +146,7 @@ private class BixbyVoiceInteractionSession(
         speechBuffer.append(chunk)
         val current = speechBuffer.toString()
 
-        val boundary = Regex("[.!?।]+\\s+").findLast(current)
+        val boundary = Regex("[.!?।]+\\s+").findAll(current).lastOrNull()
         if (boundary != null && boundary.range.last >= 40 && boundary.range.last < current.lastIndex) {
             val sentence = current.substring(0, boundary.range.last + 1).trim()
             speechBuffer.delete(0, boundary.range.last + 1)
