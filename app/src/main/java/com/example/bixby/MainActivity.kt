@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textToSpeech: TextToSpeech
     private lateinit var aiHandler: AssistantAiHandler
     private var ttsReady = false
+    private var pendingWelcome = false
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -83,15 +84,17 @@ class MainActivity : AppCompatActivity() {
         orbView = findViewById(R.id.orbView)
         textInput = findViewById(R.id.textInput)
         aiHandler = AssistantAiHandler(this)
+        pendingWelcome = AiVoiceBridge.isVoiceActivation(intent)
         textToSpeech = TextToSpeech(this) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) {
                 textToSpeech.language = Locale.getDefault()
                 textToSpeech.setSpeechRate(0.96f)
+                if (pendingWelcome) {
+                    pendingWelcome = false
+                    window.decorView.post { speakWelcomeSequence() }
+                }
             }
-        }
-        if (AiVoiceBridge.isVoiceActivation(intent)) {
-            window.decorView.post { speakWelcomeSequence() }
         }
 
         setupOrb()
@@ -183,7 +186,11 @@ class MainActivity : AppCompatActivity() {
             greetingText.text = "You said: \"$bridgedCommand\""
             executeCommand(bridgedCommand.lowercase(Locale.ROOT))
         } else if (AiVoiceBridge.isVoiceActivation(intent)) {
-            speakWelcomeSequence()
+            if (ttsReady) {
+                speakWelcomeSequence()
+            } else {
+                pendingWelcome = true
+            }
         }
     }
 
