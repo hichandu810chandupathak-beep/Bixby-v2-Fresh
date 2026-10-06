@@ -33,6 +33,7 @@ private class BixbyVoiceInteractionSession(
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private val speechBuffer = StringBuilder()
+    private var finalUtteranceId: String? = null
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         // Audio-only mirror mode: never launch MainActivity or external assistant UI.
@@ -54,6 +55,15 @@ private class BixbyVoiceInteractionSession(
                     Locale("en", "IN")
                 }
                 tts?.language = locale
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onDone(utteranceId: String?) {
+                        if (utteranceId == finalUtteranceId) finishAudioOnly()
+                    }
+                    override fun onError(utteranceId: String?) {
+                        if (utteranceId == finalUtteranceId) finishAudioOnly()
+                    }
+                })
             }
         }
 
@@ -137,7 +147,7 @@ private class BixbyVoiceInteractionSession(
         val current = speechBuffer.toString()
 
         val boundary = Regex("[.!?।]+\\s+").findLast(current)
-        if (boundary != null && boundary.range.last >= 40) {
+        if (boundary != null && boundary.range.last >= 40 && boundary.range.last < current.lastIndex) {
             val sentence = current.substring(0, boundary.range.last + 1).trim()
             speechBuffer.delete(0, boundary.range.last + 1)
             speakQueued(sentence)
@@ -155,8 +165,8 @@ private class BixbyVoiceInteractionSession(
         val remaining = speechBuffer.toString().trim()
         speechBuffer.setLength(0)
         if (remaining.isNotBlank()) {
-            speakQueued(remaining)
-        } else {
+            speakFinal(remaining)
+        } else if (finalUtteranceId == null) {
             finishAudioOnly()
         }
     }
@@ -178,7 +188,6 @@ private class BixbyVoiceInteractionSession(
     }
 
     private fun speakFinal(text: String) {
-        speechBuffer.setLength(0)
         if (text.isBlank()) {
             finishAudioOnly()
             return
@@ -191,27 +200,15 @@ private class BixbyVoiceInteractionSession(
         }
 
         scope.launch(Dispatchers.Main.immediate) {
-            if (!ttsReady) {
-                kotlinx.coroutines.delay(150)
-            }
+            if (!ttsReady) kotlinx.coroutines.delay(150)
             if (!ttsReady) {
                 finishAudioOnly()
                 return@launch
             }
 
+            finalUtteranceId = "bixby_final_" + System.nanoTime()
             speaker.setSpeechRate(0.96f)
-            speaker.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-
-                override fun onDone(utteranceId: String?) {
-                    finishAudioOnly()
-                }
-
-                override fun onError(utteranceId: String?) {
-                    finishAudioOnly()
-                }
-            })
-            speaker.speak(text, TextToSpeech.QUEUE_ADD, null, "bixby_final_${System.nanoTime()}")
+            speaker.speak(text, TextToSpeech.QUEUE_ADD, null, finalUtteranceId)
         }
     }
 
@@ -231,6 +228,7 @@ private class BixbyVoiceInteractionSession(
         tts = null
         ttsReady = false
         speechBuffer.setLength(0)
+        finalUtteranceId = null
         scope.cancel()
         try { hide() } catch (_: Exception) { }
     }
