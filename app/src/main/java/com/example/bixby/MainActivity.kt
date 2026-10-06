@@ -321,6 +321,16 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun speechLocale(): Locale =
+        if (Locale.getDefault().language == "hi") Locale("hi", "IN") else Locale("en", "IN")
+
+    private fun isHindiText(text: String): Boolean {
+        if (text.any { it.code in 0x0900..0x097F }) return true
+        val padded = " " + text.lowercase(Locale.ROOT) + " "
+        val markers = listOf(" kya ", " kaise ", " kaisi ", " aap ", " tum ", " mera ", " meri ", " mujhe ", " chahiye ", " karo ", " karna ", " batao ", " hai ", " ho ", " nahi ", " nahin ", " kyun ", " kaha ", " kaun ")
+        return markers.any { padded.contains(it) }
+    }
+
     private fun startListening() {
         if (!hasPermission(Manifest.permission.RECORD_AUDIO)) {
             ActivityCompat.requestPermissions(
@@ -336,7 +346,13 @@ class MainActivity : AppCompatActivity() {
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLocale().toLanguageTag())
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("hi-IN", "en-IN"))
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_INITIAL_ACTIVE_DURATION_TIME_MILLIS, 5000L)
+            }
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
@@ -494,7 +510,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val locale = Locale.getDefault()
+        val locale = if (isHindiText(response)) Locale("hi", "IN") else Locale("en", "IN")
         textToSpeech.language = locale
         val maleVoice = textToSpeech.voices
             .asSequence()
