@@ -18,14 +18,13 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Prepare Gradle Wrapper
+    - name: Install Gradle 8.1.1 without cache
       run: |
-        mkdir -p gradle/wrapper
-        curl -fsSL https://raw.githubusercontent.com/gradle/gradle/v8.1.1/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
-        chmod +x gradlew
+        curl -fsSL https://services.gradle.org/distributions/gradle-8.1.1-bin.zip -o /tmp/gradle.zip
+        unzip -q /tmp/gradle.zip -d /tmp
 
-    - name: Build with Gradle Wrapper
-      run: ./gradlew assembleDebug --no-daemon
+    - name: Build with Gradle
+      run: /tmp/gradle-8.1.1/bin/gradle assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
