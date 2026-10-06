@@ -26,7 +26,6 @@
 
     <application
         android:allowBackup="true"
-        <!-- Launcher is intentionally bitmap-only; no adaptive/vector launcher resource is used. -->
         android:icon="@mipmap/ic_launcher"
         android:label="Bixby"
         android:roundIcon="@mipmap/ic_launcher_round"
