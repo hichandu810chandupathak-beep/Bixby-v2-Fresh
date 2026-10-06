@@ -456,12 +456,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Offline mode"
+        statusText.text = "Online mode"
         setOrbState(OrbState.PROCESSING)
+        greetingText.text = "Thinking..."
 
-        val localResponse = OfflineChatHandler.respond(command)
-        greetingText.text = localResponse
-        speakResponse(localResponse)
+        commandScope.launch {
+            val online = aiHandler.generateResponse(command)
+            online.onSuccess { response ->
+                statusText.text = "Online"
+                greetingText.text = response
+                speakResponse(response)
+            }.onFailure {
+                val localResponse = OfflineChatHandler.respond(command)
+                statusText.text = "Offline mode"
+                greetingText.text = localResponse
+                speakResponse(localResponse)
+            }
+        }
     }
 
     private fun speakResponse(response: String) {
