@@ -7,6 +7,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import kotlinx.coroutines.CoroutineScope
@@ -120,9 +121,25 @@ private class BixbyVoiceInteractionSession(
             return
         }
 
-        tts?.setSpeechRate(0.96f)
-        tts?.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_audio_response")
-        finishAudioOnly()
+        val speaker = tts
+        if (speaker == null) {
+            finishAudioOnly()
+            return
+        }
+
+        speaker.setSpeechRate(0.96f)
+        speaker.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+
+            override fun onDone(utteranceId: String?) {
+                finishAudioOnly()
+            }
+
+            override fun onError(utteranceId: String?) {
+                finishAudioOnly()
+            }
+        })
+        speaker.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_audio_response")
     }
 
     private fun finishAudioOnly() {
