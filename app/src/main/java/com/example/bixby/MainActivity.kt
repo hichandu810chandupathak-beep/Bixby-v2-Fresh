@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_STARTUP_PERMISSIONS = 104
         private const val REQUEST_ASSISTANT_ROLE = 105
         const val EXTRA_START_LISTENING = "com.example.bixby.extra.START_LISTENING"
+        const val EXTRA_BACKGROUND_LISTENING = "com.example.bixby.extra.BACKGROUND_LISTENING"
     }
 
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -79,6 +80,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val startListeningFromExternal = intent?.getBooleanExtra(EXTRA_START_LISTENING, false) == true
+        val backgroundListening = intent?.getBooleanExtra(EXTRA_BACKGROUND_LISTENING, false) == true
 
         micButton = findViewById(R.id.micButton)
         statusText = findViewById(R.id.statusText)
@@ -91,7 +93,8 @@ class MainActivity : AppCompatActivity() {
         textToSpeech = TextToSpeech(this) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) {
-                textToSpeech.language = Locale.getDefault()
+                val defaultLocale = Locale.getDefault()
+                textToSpeech.language = if (defaultLocale.language == "hi") Locale("hi", "IN") else defaultLocale
                 textToSpeech.setSpeechRate(0.96f)
                 if (pendingWelcome) {
                     pendingWelcome = false
@@ -109,7 +112,17 @@ class MainActivity : AppCompatActivity() {
         setOrbState(OrbState.IDLE)
 
         if (startListeningFromExternal) {
-            window.decorView.post { startListening() }
+            window.decorView.post {
+                if (backgroundListening) {
+                    window.decorView.alpha = 0f
+                    window.setFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    )
+                }
+                startListening()
+                if (backgroundListening) moveTaskToBack(true)
+            }
         }
 
         micButton.setOnClickListener {
