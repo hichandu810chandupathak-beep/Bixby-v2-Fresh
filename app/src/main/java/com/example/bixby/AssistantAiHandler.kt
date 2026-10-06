@@ -11,7 +11,13 @@ class AssistantAiHandler(private val context: android.content.Context) {
     private val historyLock = Any()
     private val conversation = JSONArray()
 
-    suspend fun generateResponse(prompt: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun generateResponse(prompt: String): Result<String> =
+        generateResponseStream(prompt) { }
+
+    suspend fun generateResponseStream(
+        prompt: String,
+        onChunk: (String) -> Unit
+    ): Result<String> = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY.trim()
 
         try {
@@ -20,6 +26,7 @@ class AssistantAiHandler(private val context: android.content.Context) {
                     IllegalStateException("Gemini API key is missing.")
                 )
             }
+
             val requestBody = JSONObject().apply {
                 put("system_instruction", JSONObject().put(
                     "parts", JSONArray().put(JSONObject().put(
@@ -39,20 +46,20 @@ class AssistantAiHandler(private val context: android.content.Context) {
             }
 
             val url = URL(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-)
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+            )
 
-val connection = (url.openConnection() as HttpURLConnection).apply {
-    requestMethod = "POST"
-    connectTimeout = 15000
-    readTimeout = 30000
-    useCaches = false
-    doInput = true
-    doOutput = true
-    setRequestProperty("Accept", "application/json")
-    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-    setRequestProperty("x-goog-api-key", apiKey)
-}
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15000
+                readTimeout = 60000
+                useCaches = false
+                doInput = true
+                doOutput = true
+                setRequestProperty("Accept", "text/event-stream")
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("x-goog-api-key", apiKey)
+            }
 
             val requestBytes = requestBody.toString().toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(requestBytes.size)
@@ -62,29 +69,53 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
             }
 
             val code = connection.responseCode
-            val responseBody = if (code in 200..299) {
-                connection.inputStream.bufferedReader().use { it.readText() }
-            } else {
-                connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            }
-            connection.disconnect()
-
             if (code !in 200..299) {
+                val responseBody = connection.errorStream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+                connection.disconnect()
+
                 val detail = try {
-                    JSONObject(responseBody).optJSONObject("error")?.optString("message")
+                    JSONObject(responseBody)
+                        .optJSONObject("error")
+                        ?.optString("message")
                 } catch (_: Exception) {
                     null
                 }
-                val suffix = if (!detail.isNullOrBlank()) ": " + detail else ""
+                val suffix = if (!detail.isNullOrBlank()) ": $detail" else ""
                 return@withContext Result.failure(
-                    IllegalStateException("Gemini API error " + code + suffix)
+                    IllegalStateException("Gemini API error $code$suffix")
                 )
             }
 
-            val answer = extractAnswer(responseBody)
-            if (answer.isBlank()) {
+            val answer = StringBuilder()
+
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload.isBlank() || payload == "[DONE]") continue
+
+                    val chunk = extractAnswer(payload)
+                    if (chunk.isNotBlank()) {
+                        if (answer.isNotEmpty() && !answer.endsWith("\n")) {
+                            answer.append("\n")
+                        }
+                        answer.append(chunk)
+                        onChunk(chunk)
+                    }
+                }
+            }
+
+            connection.disconnect()
+
+            val finalAnswer = answer.toString().trim()
+            if (finalAnswer.isBlank()) {
                 return@withContext Result.failure(
-                    IllegalStateException("Gemini returned an empty response.")
+                    IllegalStateException("Gemini returned an empty streamed response.")
                 )
             }
 
@@ -95,12 +126,12 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
                 })
                 conversation.put(JSONObject().apply {
                     put("role", "model")
-                    put("parts", JSONArray().put(JSONObject().put("text", answer)))
+                    put("parts", JSONArray().put(JSONObject().put("text", finalAnswer)))
                 })
                 while (conversation.length() > 8) conversation.remove(0)
             }
 
-            Result.success(answer)
+            Result.success(finalAnswer)
         } catch (e: Exception) {
             Result.failure(
                 IllegalStateException(
@@ -126,8 +157,10 @@ val connection = (url.openConnection() as HttpURLConnection).apply {
 
     private fun extractAnswer(responseBody: String): String {
         val candidates = JSONObject(responseBody).optJSONArray("candidates") ?: return ""
-        val parts = candidates.optJSONObject(0)?.optJSONObject("content")
+        val parts = candidates.optJSONObject(0)
+            ?.optJSONObject("content")
             ?.optJSONArray("parts") ?: return ""
+
         val answer = StringBuilder()
         for (index in 0 until parts.length()) {
             val text = parts.optJSONObject(index)?.optString("text").orEmpty()
