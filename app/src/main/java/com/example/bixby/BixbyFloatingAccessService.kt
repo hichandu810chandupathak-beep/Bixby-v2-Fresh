@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 
@@ -44,7 +43,14 @@ class BixbyFloatingAccessService : Service() {
         }
 
         createNotificationChannel()
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        val notificationBuilder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        val notification = notificationBuilder
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Bixby floating access")
             .setContentText("Bixby is ready from any screen")
