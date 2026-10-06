@@ -1,4 +1,5 @@
 name: Build Android APK
+# Final bugfix verification build trigger
 
 on:
   push:
