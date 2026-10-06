@@ -2,6 +2,8 @@ package com.example.bixby
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -29,10 +31,11 @@ private class BixbyVoiceInteractionSession(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private val speechBuffer = StringBuilder()
 
     override fun onShow(args: Bundle?, showFlags: Int) {
-        // Audio-only mirror mode: deliberately do not call super.onShow() and
-        // never launch MainActivity or any external assistant UI.
+        // Audio-only mirror mode: never launch MainActivity or external assistant UI.
         startAudioOnlyTurn()
     }
 
@@ -43,12 +46,14 @@ private class BixbyVoiceInteractionSession(
         }
 
         tts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = if (Locale.getDefault().language == "hi") {
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                val locale = if (Locale.getDefault().language == "hi") {
                     Locale("hi", "IN")
                 } else {
                     Locale("en", "IN")
                 }
+                tts?.language = locale
             }
         }
 
@@ -74,12 +79,24 @@ private class BixbyVoiceInteractionSession(
                 }
 
                 scope.launch {
-                    val result = AssistantAiHandler(context).generateResponse(command)
-                    result.onSuccess { response ->
-                        speak(response)
-                    }.onFailure {
-                        val fallback = OfflineChatHandler.respond(command)
-                        speak(fallback)
+                    val handler = AssistantAiHandler(context)
+                    val result = handler.generateResponseStream(command) { chunk ->
+                        scope.launch(Dispatchers.Main.immediate) {
+                            enqueueSpeechChunk(chunk)
+                        }
+                    }
+
+                    result.onSuccess {
+                        flushSpeechBuffer()
+                    }.onFailure { error ->
+                        if (isActuallyOffline()) {
+                            speakFinal(OfflineChatHandler.respond(command))
+                        } else {
+                            speakFinal(
+                                "I couldn't reach Gemini right now. " +
+                                    (error.message ?: "Please try again.")
+                            )
+                        }
                     }
                 }
             }
@@ -115,8 +132,54 @@ private class BixbyVoiceInteractionSession(
         }
     }
 
-    private fun speak(response: String) {
-        if (response.isBlank()) {
+    private fun enqueueSpeechChunk(chunk: String) {
+        speechBuffer.append(chunk)
+        val current = speechBuffer.toString()
+
+        val boundary = Regex("[.!?।]+\\s+").findLast(current)
+        if (boundary != null && boundary.range.last >= 40) {
+            val sentence = current.substring(0, boundary.range.last + 1).trim()
+            speechBuffer.delete(0, boundary.range.last + 1)
+            speakQueued(sentence)
+        } else if (current.length >= 140) {
+            val split = current.lastIndexOf(' ', 120)
+            if (split > 20) {
+                val part = current.substring(0, split).trim()
+                speechBuffer.delete(0, split)
+                speakQueued(part)
+            }
+        }
+    }
+
+    private fun flushSpeechBuffer() {
+        val remaining = speechBuffer.toString().trim()
+        speechBuffer.setLength(0)
+        if (remaining.isNotBlank()) {
+            speakQueued(remaining)
+        } else {
+            finishAudioOnly()
+        }
+    }
+
+    private fun speakQueued(text: String) {
+        if (text.isBlank()) return
+        val speaker = tts ?: return
+
+        if (!ttsReady) {
+            scope.launch {
+                kotlinx.coroutines.delay(150)
+                speakQueued(text)
+            }
+            return
+        }
+
+        speaker.setSpeechRate(0.96f)
+        speaker.speak(text, TextToSpeech.QUEUE_ADD, null, "bixby_stream_${System.nanoTime()}")
+    }
+
+    private fun speakFinal(text: String) {
+        speechBuffer.setLength(0)
+        if (text.isBlank()) {
             finishAudioOnly()
             return
         }
@@ -127,19 +190,37 @@ private class BixbyVoiceInteractionSession(
             return
         }
 
-        speaker.setSpeechRate(0.96f)
-        speaker.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) = Unit
-
-            override fun onDone(utteranceId: String?) {
+        scope.launch(Dispatchers.Main.immediate) {
+            if (!ttsReady) {
+                kotlinx.coroutines.delay(150)
+            }
+            if (!ttsReady) {
                 finishAudioOnly()
+                return@launch
             }
 
-            override fun onError(utteranceId: String?) {
-                finishAudioOnly()
-            }
-        })
-        speaker.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_audio_response")
+            speaker.setSpeechRate(0.96f)
+            speaker.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+
+                override fun onDone(utteranceId: String?) {
+                    finishAudioOnly()
+                }
+
+                override fun onError(utteranceId: String?) {
+                    finishAudioOnly()
+                }
+            })
+            speaker.speak(text, TextToSpeech.QUEUE_ADD, null, "bixby_final_${System.nanoTime()}")
+        }
+    }
+
+    private fun isActuallyOffline(): Boolean {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return true
+        val network = manager.activeNetwork ?: return true
+        val capabilities = manager.getNetworkCapabilities(network) ?: return true
+        return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun finishAudioOnly() {
@@ -148,6 +229,8 @@ private class BixbyVoiceInteractionSession(
         recognizer = null
         tts?.shutdown()
         tts = null
+        ttsReady = false
+        speechBuffer.setLength(0)
         scope.cancel()
         try { hide() } catch (_: Exception) { }
     }
@@ -159,6 +242,8 @@ private class BixbyVoiceInteractionSession(
         recognizer = null
         tts?.shutdown()
         tts = null
+        ttsReady = false
+        speechBuffer.setLength(0)
         scope.cancel()
     }
 }
