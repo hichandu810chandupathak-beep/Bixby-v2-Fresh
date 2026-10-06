@@ -15,7 +15,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.widget.TextView
+import android.widget.ImageButton
 
 class BixbyFloatingAccessService : Service() {
 
@@ -28,7 +28,7 @@ class BixbyFloatingAccessService : Service() {
 
     private var windowManager: WindowManager? = null
     private var windowContext: Context? = null
-    private var floatingButton: TextView? = null
+    private var floatingButton: ImageButton? = null
     private var layoutParams: WindowManager.LayoutParams? = null
 
     override fun onCreate() {
@@ -119,14 +119,14 @@ class BixbyFloatingAccessService : Service() {
         windowManager = contextForWindow.getSystemService(WINDOW_SERVICE) as WindowManager
 
         val size = (56 * resources.displayMetrics.density).toInt()
-        val button = TextView(contextForWindow).apply {
-            text = "B"
-            setTextColor(Color.WHITE)
-            textSize = 24f
+        val button = ImageButton(contextForWindow).apply {
+            setImageResource(android.R.drawable.ic_btn_speak_now)
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            contentDescription = "Bixby microphone"
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = false
-            contentDescription = "Bixby"
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(37, 99, 235), Color.rgb(124, 58, 237))
@@ -227,6 +227,7 @@ class BixbyFloatingAccessService : Service() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             )
             putExtra(MainActivity.EXTRA_START_LISTENING, true)
+            putExtra(MainActivity.EXTRA_BACKGROUND_LISTENING, true)
         }
 
         try {
