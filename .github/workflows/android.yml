@@ -12,25 +12,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '17'
-
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.1.1'
-        cache-disabled: true
+        java-version: '21'
+        cache: 'none'
 
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew || true
+      run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: |
-        sed -i 's/import android\.provider\.SearchManager/import android.app.SearchManager/' app/src/main/java/com/example/bixby/AiVoiceBridge.kt
-        gradle assembleDebug
+    - name: Build with Gradle Wrapper
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
