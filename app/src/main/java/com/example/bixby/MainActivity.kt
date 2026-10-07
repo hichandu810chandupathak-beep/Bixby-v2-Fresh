@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.app.role.RoleManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
@@ -128,7 +127,6 @@ class MainActivity : AppCompatActivity() {
         setupMicButton()
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
-        requestAssistantRoleIfAvailable()
         setOrbState(OrbState.IDLE)
         registerFloatingVoiceReceiver()
 
@@ -191,25 +189,6 @@ class MainActivity : AppCompatActivity() {
         }
         micButton.clipToOutline = true
     }
-
-    private fun requestAssistantRoleIfAvailable() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return
-        val roleManager = getSystemService(RoleManager::class.java) ?: return
-        if (!roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) return
-        if (roleManager.isRoleHeld(RoleManager.ROLE_ASSISTANT)) {
-            statusText.text = "Bixby assistant ready"
-            return
-        }
-        try {
-            startActivityForResult(
-                roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT),
-                REQUEST_ASSISTANT_ROLE
-            )
-        } catch (_: Exception) {
-            statusText.text = "Ready"
-        }
-    }
-
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
@@ -508,11 +487,10 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Online"
                 greetingText.text = response
                 speakResponse(response)
-            }.onFailure {
-                val localResponse = OfflineChatHandler.respond(command)
-                statusText.text = "Offline mode"
-                greetingText.text = localResponse
-                speakResponse(localResponse)
+            }.onFailure { error ->
+                statusText.text = "Gemini unavailable"
+                greetingText.text = error.message ?: "Gemini connection failed. Please try again."
+                speakResponse(greetingText.text.toString())
             }
         }
     }
