@@ -263,7 +263,12 @@ class BixbyFloatingAccessService : Service() {
     private fun setupSpeechRecognizer() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) return
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(this)
+        }
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: android.os.Bundle?) {
                 listening = true
