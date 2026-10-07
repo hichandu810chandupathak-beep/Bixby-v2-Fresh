@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Disabled: Bixby is an in-app/floating voice assistant, not a system VoiceInteractionService. -->
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:sessionService="com.example.bixby.BixbyVoiceInteractionSessionService"
-    android:supportsAssist="true"
-    android:supportsLaunchVoiceAssistFromKeyguard="true" />
+    android:sessionService=""
+    android:supportsAssist="false"
+    android:supportsLaunchVoiceAssistFromKeyguard="false" />
