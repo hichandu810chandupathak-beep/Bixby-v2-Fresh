@@ -487,32 +487,78 @@ class MainActivity : AppCompatActivity() {
         greetingText.text = "Thinking..."
 
         commandScope.launch {
-            val online = aiHandler.generateResponse(command)
+            var speechBuffer = StringBuilder()
+            var firstChunk = true
+
+            val online = aiHandler.generateResponseStream(command) { chunk ->
+                if (firstChunk) {
+                    firstChunk = false
+                    commandScope.launch(Dispatchers.Main.immediate) {
+                        if (ttsReady) textToSpeech.stop()
+                    }
+                }
+
+                speechBuffer.append(chunk)
+                val text = speechBuffer.toString()
+
+                val boundary = Regex("[.!?।]+\\s+").findAll(text).lastOrNull()
+                if (boundary != null) {
+                    val end = boundary.range.last + 1
+                    val sentence = text.substring(0, end).trim()
+                    speechBuffer = StringBuilder(text.substring(end))
+
+                    if (sentence.isNotBlank()) {
+                        commandScope.launch(Dispatchers.Main.immediate) {
+                            enqueueGeminiSpeech(sentence)
+                        }
+                    }
+                } else if (text.length >= 180) {
+                    val split = text.lastIndexOf(' ')
+                    if (split > 40) {
+                        val part = text.substring(0, split).trim()
+                        speechBuffer = StringBuilder(text.substring(split).trimStart())
+                        commandScope.launch(Dispatchers.Main.immediate) {
+                            enqueueGeminiSpeech(part)
+                        }
+                    }
+                }
+            }
+
             online.onSuccess { response ->
                 statusText.text = "Online"
                 greetingText.text = response
-                speakResponse(response)
+
+                val remaining = speechBuffer.toString().trim()
+                if (remaining.isNotBlank()) {
+                    enqueueGeminiSpeech(remaining)
+                } else if (firstChunk) {
+                    speakGeminiFailure("Gemini returned an empty response.")
+                }
             }.onFailure { error ->
                 statusText.text = "Gemini unavailable"
                 greetingText.text = error.message ?: "Gemini connection failed. Please try again."
-                speakResponse(greetingText.text.toString())
+
+                val remaining = speechBuffer.toString().trim()
+                if (remaining.isNotBlank()) {
+                    enqueueGeminiSpeech(remaining)
+                } else {
+                    speakGeminiFailure(greetingText.text.toString())
+                }
             }
         }
     }
 
-    private fun speakResponse(response: String) {
-        if (!ttsReady) {
-            setOrbState(OrbState.IDLE)
-            return
-        }
+    private fun enqueueGeminiSpeech(text: String) {
+        if (!ttsReady || text.isBlank()) return
 
-        val locale = if (isHindiText(response)) Locale("hi", "IN") else Locale("en", "IN")
+        val locale = if (isHindiText(text)) Locale("hi", "IN") else Locale("en", "IN")
         val languageResult = textToSpeech.setLanguage(locale)
         if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
             languageResult == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
             textToSpeech.language = Locale.ENGLISH
         }
+
         val maleVoice = textToSpeech.voices
             .asSequence()
             .filter { it.locale.language == locale.language }
@@ -524,8 +570,24 @@ class MainActivity : AppCompatActivity() {
             .firstOrNull()
 
         maleVoice?.let { textToSpeech.voice = it }
-        setOrbState(OrbState.PROCESSING)
-        textToSpeech.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_response")
+
+        val queueMode = if (textToSpeech.isSpeaking) {
+            TextToSpeech.QUEUE_ADD
+        } else {
+            TextToSpeech.QUEUE_FLUSH
+        }
+
+        textToSpeech.speak(
+            text,
+            queueMode,
+            null,
+            "bixby_gemini_" + System.nanoTime()
+        )
+    }
+
+    private fun speakGeminiFailure(message: String) {
+        if (!ttsReady || message.isBlank()) return
+        enqueueGeminiSpeech(message)
     }
 
     private fun isExitCommand(command: String): Boolean {
