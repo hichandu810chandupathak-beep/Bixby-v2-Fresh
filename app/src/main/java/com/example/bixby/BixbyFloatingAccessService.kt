@@ -17,11 +17,19 @@ import android.content.pm.PackageManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.ImageButton
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class BixbyFloatingAccessService : Service() {
 
@@ -40,6 +48,11 @@ class BixbyFloatingAccessService : Service() {
     private var layoutParams: WindowManager.LayoutParams? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var listening = false
+    private val aiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private val speechBuffer = StringBuilder()
+    private var finalUtteranceId: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -80,6 +93,7 @@ class BixbyFloatingAccessService : Service() {
         }
 
         setupSpeechRecognizer()
+        setupTts()
         showFloatingButton()
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putBoolean(PREF_ENABLED, true)
@@ -103,6 +117,12 @@ class BixbyFloatingAccessService : Service() {
         }
         speechRecognizer = null
         listening = false
+        aiScope.cancel()
+        tts?.shutdown()
+        tts = null
+        ttsReady = false
+        speechBuffer.setLength(0)
+        finalUtteranceId = null
         floatingButton = null
         windowManager = null
         windowContext = null
@@ -274,8 +294,8 @@ class BixbyFloatingAccessService : Service() {
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }
 
-                if (command != null) sendRecognizedCommand(command)
-                updateNotification("Bixby is ready from any screen")
+                if (command != null) handleRecognizedCommand(command)
+                else updateNotification("Bixby is ready from any screen")
             }
 
             override fun onPartialResults(partialResults: android.os.Bundle?) = Unit
@@ -318,6 +338,92 @@ class BixbyFloatingAccessService : Service() {
         }
     }
 
+    private fun setupTts() {
+        tts = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                val locale = if (Locale.getDefault().language == "hi") Locale("hi", "IN") else Locale("en", "IN")
+                tts?.language = locale
+                tts?.setSpeechRate(0.96f)
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onDone(utteranceId: String?) { if (utteranceId == finalUtteranceId) { finalUtteranceId = null; updateNotification("Bixby is ready from any screen") } }
+                    override fun onError(utteranceId: String?) { if (utteranceId == finalUtteranceId) { finalUtteranceId = null; updateNotification("Bixby is ready from any screen") } }
+                })
+            }
+        }
+    }
+
+    private fun handleRecognizedCommand(command: String) {
+        if (isLocalCommand(command)) sendRecognizedCommand(command) else streamGeminiVoice(command)
+    }
+
+    private fun isLocalCommand(command: String): Boolean {
+        val text = command.trim().lowercase(Locale.ROOT)
+        return text.matches(Regex("""^(please\s+)?(open|launch|start)\b.*""")) ||
+            text.matches(Regex("""^(please\s+)?(call|phone)\b.*""")) ||
+            text.matches(Regex("""^(please\s+)?(turn on|turn off|enable|disable)\b.*""")) ||
+            text.contains("flashlight") || text.contains("torch") || text.contains("wifi") ||
+            text.contains("wi-fi") || text.contains("bluetooth") || text == "exit" ||
+            text == "go home" || text == "home"
+    }
+
+    private fun streamGeminiVoice(command: String) {
+        updateNotification("Talking to Gemini")
+        speechBuffer.setLength(0)
+        finalUtteranceId = null
+        aiScope.launch {
+            val result = AssistantAiHandler(this@BixbyFloatingAccessService).generateResponseStream(command) { chunk ->
+                aiScope.launch(Dispatchers.Main.immediate) { enqueueSpeechChunk(chunk) }
+            }
+            result.onSuccess { flushSpeechBuffer() }.onFailure { error ->
+                speechBuffer.setLength(0)
+                speakFinal(error.message ?: "Gemini connection failed. Please try again.")
+            }
+        }
+    }
+
+    private fun enqueueSpeechChunk(chunk: String) {
+        speechBuffer.append(chunk)
+        val current = speechBuffer.toString()
+        val boundary = Regex("[.!?।]+\\s+").findAll(current).lastOrNull()
+        if (boundary != null && boundary.range.last >= 40 && boundary.range.last < current.lastIndex) {
+            val sentence = current.substring(0, boundary.range.last + 1).trim()
+            speechBuffer.delete(0, boundary.range.last + 1)
+            speakQueued(sentence)
+        } else if (current.length >= 140) {
+            val split = current.lastIndexOf(" ", 120)
+            if (split > 20) {
+                val part = current.substring(0, split).trim()
+                speechBuffer.delete(0, split)
+                speakQueued(part)
+            }
+        }
+    }
+
+    private fun flushSpeechBuffer() {
+        val remaining = speechBuffer.toString().trim()
+        speechBuffer.setLength(0)
+        if (remaining.isNotBlank()) speakFinal(remaining) else updateNotification("Bixby is ready from any screen")
+    }
+
+    private fun speakQueued(text: String) {
+        if (text.isBlank()) return
+        val speaker = tts ?: return
+        if (!ttsReady) { aiScope.launch { delay(150); speakQueued(text) }; return }
+        speaker.speak(text, TextToSpeech.QUEUE_ADD, null, "bixby_stream_" + System.nanoTime())
+    }
+
+    private fun speakFinal(text: String) {
+        if (text.isBlank()) { updateNotification("Bixby is ready from any screen"); return }
+        val speaker = tts ?: run { updateNotification("Bixby is ready from any screen"); return }
+        aiScope.launch(Dispatchers.Main.immediate) {
+            if (!ttsReady) delay(150)
+            if (!ttsReady) { updateNotification("Bixby is ready from any screen"); return@launch }
+            finalUtteranceId = "bixby_final_" + System.nanoTime()
+            speaker.speak(text, TextToSpeech.QUEUE_ADD, null, finalUtteranceId)
+        }
+    }
     private fun sendRecognizedCommand(command: String) {
         val broadcast = Intent(ACTION_RECOGNIZED_COMMAND).apply {
             setPackage(packageName)
