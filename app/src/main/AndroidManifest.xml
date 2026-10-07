@@ -48,23 +48,6 @@
         </activity>
 
         <service
-            android:name=".BixbyVoiceInteractionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION">
-            <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.voice_interaction"
-                android:resource="@xml/bixby_voice_interaction" />
-        </service>
-
-        <service
-            android:name=".BixbyVoiceInteractionSessionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION" />
-
-        <service
             android:name=".BixbyFloatingAccessService"
             android:exported="false"
             android:foregroundServiceType="specialUse|microphone">
