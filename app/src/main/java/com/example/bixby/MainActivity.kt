@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
@@ -61,6 +63,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var aiHandler: AssistantAiHandler
     private var ttsReady = false
     private var pendingWelcome = false
+    private val streamSpeechBuffer = StringBuilder()
+    private val streamDisplayBuffer = StringBuilder()
+    private var streamFinalUtteranceId: String? = null
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -115,6 +120,21 @@ class MainActivity : AppCompatActivity() {
                 val defaultLocale = Locale.getDefault()
                 textToSpeech.language = if (defaultLocale.language == "hi") Locale("hi", "IN") else defaultLocale
                 textToSpeech.setSpeechRate(0.96f)
+                textToSpeech.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onDone(utteranceId: String?) {
+                        if (utteranceId == streamFinalUtteranceId) {
+                            streamFinalUtteranceId = null
+                            runOnUiThread { setOrbState(OrbState.IDLE) }
+                        }
+                    }
+                    override fun onError(utteranceId: String?) {
+                        if (utteranceId == streamFinalUtteranceId) {
+                            streamFinalUtteranceId = null
+                            runOnUiThread { setOrbState(OrbState.IDLE) }
+                        }
+                    }
+                })
                 if (pendingWelcome) {
                     pendingWelcome = false
                     window.decorView.post { speakWelcomeSequence() }
@@ -484,72 +504,76 @@ class MainActivity : AppCompatActivity() {
     private fun askConversationalAi(command: String) {
         statusText.text = "Online mode"
         setOrbState(OrbState.PROCESSING)
-        greetingText.text = "Thinking..."
+        greetingText.text = "Listening to Gemini..."
+        streamSpeechBuffer.setLength(0)
+        streamDisplayBuffer.setLength(0)
+        streamFinalUtteranceId = null
 
         commandScope.launch {
-            var speechBuffer = StringBuilder()
-            var firstChunk = true
-
             val online = aiHandler.generateResponseStream(command) { chunk ->
-                if (firstChunk) {
-                    firstChunk = false
-                    commandScope.launch(Dispatchers.Main.immediate) {
-                        if (ttsReady) textToSpeech.stop()
-                    }
-                }
-
-                speechBuffer.append(chunk)
-                val text = speechBuffer.toString()
-
-                val boundary = Regex("[.!?।]+\\s+").findAll(text).lastOrNull()
-                if (boundary != null) {
-                    val end = boundary.range.last + 1
-                    val sentence = text.substring(0, end).trim()
-                    speechBuffer = StringBuilder(text.substring(end))
-
-                    if (sentence.isNotBlank()) {
-                        commandScope.launch(Dispatchers.Main.immediate) {
-                            enqueueGeminiSpeech(sentence)
-                        }
-                    }
-                } else if (text.length >= 180) {
-                    val split = text.lastIndexOf(' ')
-                    if (split > 40) {
-                        val part = text.substring(0, split).trim()
-                        speechBuffer = StringBuilder(text.substring(split).trimStart())
-                        commandScope.launch(Dispatchers.Main.immediate) {
-                            enqueueGeminiSpeech(part)
-                        }
-                    }
+                commandScope.launch(Dispatchers.Main.immediate) {
+                    enqueueStreamingSpeech(chunk)
                 }
             }
 
-            online.onSuccess { response ->
-                statusText.text = "Online"
-                greetingText.text = response
-
-                val remaining = speechBuffer.toString().trim()
-                if (remaining.isNotBlank()) {
-                    enqueueGeminiSpeech(remaining)
-                } else if (firstChunk) {
-                    speakGeminiFailure("Gemini returned an empty response.")
-                }
+            online.onSuccess {
+                flushStreamingSpeech()
             }.onFailure { error ->
-                statusText.text = "Gemini unavailable"
-                greetingText.text = error.message ?: "Gemini connection failed. Please try again."
-
-                val remaining = speechBuffer.toString().trim()
-                if (remaining.isNotBlank()) {
-                    enqueueGeminiSpeech(remaining)
+                if (isActuallyOffline()) {
+                    val fallback = OfflineChatHandler.respond(command)
+                    streamSpeechBuffer.setLength(0)
+                    streamFinalUtteranceId = null
+                    statusText.text = "Offline"
+                    greetingText.text = fallback
+                    speakResponse(fallback)
                 } else {
-                    speakGeminiFailure(greetingText.text.toString())
+                    streamSpeechBuffer.setLength(0)
+                    streamFinalUtteranceId = null
+                    statusText.text = "Gemini unavailable"
+                    greetingText.text = error.message
+                        ?: "Gemini connection failed. Please try again."
+                    speakResponse(greetingText.text.toString())
                 }
             }
         }
     }
 
-    private fun enqueueGeminiSpeech(text: String) {
-        if (!ttsReady || text.isBlank()) return
+    private fun enqueueStreamingSpeech(chunk: String) {
+        if (chunk.isBlank()) return
+        streamSpeechBuffer.append(chunk)
+        streamDisplayBuffer.append(chunk)
+        greetingText.text = streamDisplayBuffer.toString().trim()
+        statusText.text = "Online • streaming"
+
+        val current = streamSpeechBuffer.toString()
+        val boundary = Regex("[.!?।]+\\s+").findLast(current)
+
+        if (boundary != null && boundary.range.last >= 20) {
+            val sentence = current.substring(0, boundary.range.last + 1).trim()
+            streamSpeechBuffer.delete(0, boundary.range.last + 1)
+            speakStreamingChunk(sentence)
+        } else if (current.length >= 100) {
+            val split = current.lastIndexOf(' ', 90)
+            if (split > 20) {
+                val part = current.substring(0, split).trim()
+                streamSpeechBuffer.delete(0, split)
+                speakStreamingChunk(part)
+            }
+        }
+    }
+
+    private fun flushStreamingSpeech() {
+        val remaining = streamSpeechBuffer.toString().trim()
+        streamSpeechBuffer.setLength(0)
+        if (remaining.isBlank()) {
+            if (streamFinalUtteranceId == null) setOrbState(OrbState.IDLE)
+            return
+        }
+        speakStreamingChunk(remaining, finalChunk = true)
+    }
+
+    private fun speakStreamingChunk(text: String, finalChunk: Boolean = false) {
+        if (text.isBlank() || !ttsReady) return
 
         val locale = if (isHindiText(text)) Locale("hi", "IN") else Locale("en", "IN")
         val languageResult = textToSpeech.setLanguage(locale)
@@ -568,26 +592,46 @@ class MainActivity : AppCompatActivity() {
             }
             .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { it.latency }))
             .firstOrNull()
-
         maleVoice?.let { textToSpeech.voice = it }
 
-        val queueMode = if (textToSpeech.isSpeaking) {
-            TextToSpeech.QUEUE_ADD
-        } else {
-            TextToSpeech.QUEUE_FLUSH
-        }
-
-        textToSpeech.speak(
-            text,
-            queueMode,
-            null,
-            "bixby_gemini_" + System.nanoTime()
-        )
+        val utteranceId = "bixby_stream_" + System.nanoTime()
+        if (finalChunk) streamFinalUtteranceId = utteranceId
+        textToSpeech.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
-    private fun speakGeminiFailure(message: String) {
-        if (!ttsReady || message.isBlank()) return
-        enqueueGeminiSpeech(message)
+    private fun isActuallyOffline(): Boolean {
+        val manager = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+        val network = manager.activeNetwork ?: return true
+        val capabilities = manager.getNetworkCapabilities(network) ?: return true
+        return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun speakResponse(response: String) {
+        if (!ttsReady) {
+            setOrbState(OrbState.IDLE)
+            return
+        }
+
+        val locale = if (isHindiText(response)) Locale("hi", "IN") else Locale("en", "IN")
+        val languageResult = textToSpeech.setLanguage(locale)
+        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
+            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            textToSpeech.language = Locale.ENGLISH
+        }
+        val maleVoice = textToSpeech.voices
+            .asSequence()
+            .filter { it.locale.language == locale.language }
+            .filter {
+                val name = it.name.lowercase(Locale.ROOT)
+                name.contains("male") || name.contains("masculine")
+            }
+            .sortedWith(compareBy({ it.isNetworkConnectionRequired }, { it.latency }))
+            .firstOrNull()
+
+        maleVoice?.let { textToSpeech.voice = it }
+        setOrbState(OrbState.PROCESSING)
+        textToSpeech.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_response")
     }
 
     private fun isExitCommand(command: String): Boolean {
@@ -1244,6 +1288,9 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
         }
         commandScope.cancel()
+        streamSpeechBuffer.setLength(0)
+        streamDisplayBuffer.setLength(0)
+        streamFinalUtteranceId = null
         stopPulseAnimation()
         if (::textToSpeech.isInitialized) textToSpeech.shutdown()
         super.onDestroy()

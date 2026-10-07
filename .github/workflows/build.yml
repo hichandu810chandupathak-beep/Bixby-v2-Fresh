@@ -2,8 +2,6 @@ name: Bixby Fresh Android Build
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main", "feature/bixby-ai-fresh"]
   pull_request:
     branches: ["main"]
 
