@@ -18,7 +18,7 @@ class AssistantAiHandler(private val context: android.content.Context) {
         prompt: String,
         onChunk: (String) -> Unit
     ): Result<String> = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY.trim()
+        val apiKey = BuildConfig.GEMINI_API_KEY.trim().removeSurrounding(""")
 
         try {
             if (apiKey.isBlank()) {
