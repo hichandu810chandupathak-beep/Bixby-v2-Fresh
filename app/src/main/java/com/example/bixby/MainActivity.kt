@@ -151,7 +151,6 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread { setOrbState(OrbState.IDLE) }
                         }
                     }
-                    }
                 })
                 if (pendingWelcome) {
                     pendingWelcome = false
@@ -417,6 +416,8 @@ class MainActivity : AppCompatActivity() {
             playListeningBeep()
             speechRecognizer.startListening(intent)
         } catch (_: Exception) {
+            resetListeningState()
+            stopTone()
             statusText.text = "Couldn't start microphone"
             Toast.makeText(
                 this,
