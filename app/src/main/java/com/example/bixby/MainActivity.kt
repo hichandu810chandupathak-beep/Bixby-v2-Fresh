@@ -69,6 +69,8 @@ class MainActivity : AppCompatActivity() {
     private val streamDisplayBuffer = StringBuilder()
     private var streamFinalUtteranceId: String? = null
     private var micToneGenerator: ToneGenerator? = null
+    private var isListeningActive = false
+    private var completionBeepUtteranceId: String? = null
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -126,16 +128,29 @@ class MainActivity : AppCompatActivity() {
                 textToSpeech.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) = Unit
                     override fun onDone(utteranceId: String?) {
-                        if (utteranceId == streamFinalUtteranceId) {
+                        if (utteranceId == completionBeepUtteranceId) {
+                            completionBeepUtteranceId = null
+                            runOnUiThread {
+                                playCompletionBeep()
+                                setOrbState(OrbState.IDLE)
+                            }
+                        } else if (utteranceId == streamFinalUtteranceId) {
                             streamFinalUtteranceId = null
                             runOnUiThread { setOrbState(OrbState.IDLE) }
                         }
                     }
                     override fun onError(utteranceId: String?) {
-                        if (utteranceId == streamFinalUtteranceId) {
+                        if (utteranceId == completionBeepUtteranceId) {
+                            completionBeepUtteranceId = null
+                            runOnUiThread {
+                                playCompletionBeep()
+                                setOrbState(OrbState.IDLE)
+                            }
+                        } else if (utteranceId == streamFinalUtteranceId) {
                             streamFinalUtteranceId = null
                             runOnUiThread { setOrbState(OrbState.IDLE) }
                         }
+                    }
                     }
                 })
                 if (pendingWelcome) {
@@ -293,6 +308,7 @@ class MainActivity : AppCompatActivity() {
 
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
+                isListeningActive = true
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
                 setOrbState(OrbState.LISTENING)
@@ -314,20 +330,27 @@ class MainActivity : AppCompatActivity() {
             override fun onBufferReceived(buffer: ByteArray?) = Unit
 
             override fun onEndOfSpeech() {
+                finishListeningCycle()
                 statusText.text = "Processing..."
                 setOrbState(OrbState.PROCESSING)
             }
 
             override fun onError(error: Int) {
+                val wasActive = isListeningActive
+                resetListeningState()
+                if (wasActive) playCompletionBeep()
                 statusText.text = "Tap mic to try again"
                 setOrbState(OrbState.IDLE)
             }
 
             override fun onResults(results: Bundle?) {
-
                 val matches = results?.getStringArrayList(
                     SpeechRecognizer.RESULTS_RECOGNITION
                 )
+
+                if (isListeningActive) {
+                    finishListeningCycle()
+                }
 
                 if (!matches.isNullOrEmpty()) {
                     val command = matches[0].lowercase(Locale.ROOT).trim()
@@ -378,11 +401,20 @@ class MainActivity : AppCompatActivity() {
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
         }
 
+        if (isListeningActive) {
+            cancelListening()
+            return
+        }
+
+        if (::textToSpeech.isInitialized) {
+            textToSpeech.stop()
+        }
+        streamFinalUtteranceId = null
+        completionBeepUtteranceId = null
+        isListeningActive = true
+
         try {
-            if (micToneGenerator == null) {
-                micToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-            }
-            micToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+            playListeningBeep()
             speechRecognizer.startListening(intent)
         } catch (_: Exception) {
             statusText.text = "Couldn't start microphone"
@@ -392,6 +424,48 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    private fun playListeningBeep() {
+        if (micToneGenerator == null) {
+            micToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+        }
+        stopTone()
+        micToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+    }
+
+    private fun playCompletionBeep() {
+        if (micToneGenerator == null) {
+            micToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+        }
+        stopTone()
+        micToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 80)
+    }
+
+    private fun stopTone() {
+        micToneGenerator?.stopTone()
+    }
+
+    private fun resetListeningState() {
+        isListeningActive = false
+    }
+
+    private fun finishListeningCycle() {
+        if (!isListeningActive) return
+        resetListeningState()
+        playCompletionBeep()
+    }
+
+    private fun cancelListening() {
+        try {
+            speechRecognizer.cancel()
+        } catch (_: Exception) {
+        }
+        val wasActive = isListeningActive
+        resetListeningState()
+        if (wasActive) playCompletionBeep()
+        statusText.text = "Tap mic to try again"
+        setOrbState(OrbState.IDLE)
     }
 
     private fun startPulseAnimation() {
@@ -602,7 +676,10 @@ class MainActivity : AppCompatActivity() {
         maleVoice?.let { textToSpeech.voice = it }
 
         val utteranceId = "bixby_stream_" + System.nanoTime()
-        if (finalChunk) streamFinalUtteranceId = utteranceId
+        if (finalChunk) {
+            streamFinalUtteranceId = utteranceId
+            completionBeepUtteranceId = utteranceId
+        }
         textToSpeech.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
@@ -638,6 +715,7 @@ class MainActivity : AppCompatActivity() {
 
         maleVoice?.let { textToSpeech.voice = it }
         setOrbState(OrbState.PROCESSING)
+        completionBeepUtteranceId = "bixby_response"
         textToSpeech.speak(response, TextToSpeech.QUEUE_FLUSH, null, "bixby_response")
     }
 
@@ -1291,17 +1369,24 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         try { unregisterReceiver(floatingVoiceReceiver) } catch (_: Exception) { }
         try {
+            speechRecognizer.cancel()
+        } catch (_: Exception) {
+        }
+        try {
             speechRecognizer.destroy()
         } catch (_: Exception) {
         }
+        resetListeningState()
+        stopTone()
+        micToneGenerator?.release()
+        micToneGenerator = null
         commandScope.cancel()
         streamSpeechBuffer.setLength(0)
         streamDisplayBuffer.setLength(0)
         streamFinalUtteranceId = null
+        completionBeepUtteranceId = null
         stopPulseAnimation()
         if (::textToSpeech.isInitialized) textToSpeech.shutdown()
-        micToneGenerator?.release()
-        micToneGenerator = null
         super.onDestroy()
     }
 }
