@@ -10,11 +10,11 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Settings
@@ -1205,3 +1205,103 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "Action unavailable"
             Toast.makeText(
                 this,
+                "That action is unavailable on this phone.",
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (_: Exception) {
+            statusText.text = "Couldn't open"
+            Toast.makeText(
+                this,
+                "Couldn't open that action.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        when (requestCode) {
+            REQUEST_AUDIO -> {
+                statusText.text =
+                    if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                        "Microphone permission granted"
+                    } else {
+                        "Microphone permission required"
+                    }
+            }
+
+            REQUEST_CAMERA -> {
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                    val pending = pendingFlashlightCommand
+                    pendingFlashlightCommand = null
+
+                    if (pending != null) {
+                        toggleFlashlight(pending)
+                    } else {
+                        statusText.text = "Camera permission granted"
+                    }
+                } else {
+                    statusText.text = "Camera permission required for flashlight"
+                }
+            }
+
+            REQUEST_CALL, REQUEST_CONTACTS -> {
+                val target = pendingCallTarget ?: return
+                val number = extractPhoneNumber(target)
+
+                if (hasPermission(Manifest.permission.CALL_PHONE) &&
+                    (number != null || hasPermission(Manifest.permission.READ_CONTACTS))
+                ) {
+                    resolveAndCall(target)
+                } else {
+                    statusText.text = "Call permission required"
+                    Toast.makeText(
+                        this,
+                        "Phone or contacts permission is required.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+
+            REQUEST_STARTUP_PERMISSIONS -> {
+                val missing = arrayOf(
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.CALL_PHONE,
+                    Manifest.permission.READ_CONTACTS
+                ).count { !hasPermission(it) }
+
+                statusText.text =
+                    if (missing == 0) "Ready"
+                    else "Some permissions are still required"
+            }
+        }
+    }
+
+    private fun registerFloatingVoiceReceiver() {
+        val filter = IntentFilter(BixbyFloatingAccessService.ACTION_RECOGNIZED_COMMAND)
+        ContextCompat.registerReceiver(this, floatingVoiceReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    override fun onDestroy() {
+        try { unregisterReceiver(floatingVoiceReceiver) } catch (_: Exception) { }
+        try {
+            speechRecognizer.destroy()
+        } catch (_: Exception) {
+        }
+        commandScope.cancel()
+        streamSpeechBuffer.setLength(0)
+        streamDisplayBuffer.setLength(0)
+        streamFinalUtteranceId = null
+        stopPulseAnimation()
+        if (::textToSpeech.isInitialized) textToSpeech.shutdown()
+        micToneGenerator?.release()
+        micToneGenerator = null
+        super.onDestroy()
+    }
+}

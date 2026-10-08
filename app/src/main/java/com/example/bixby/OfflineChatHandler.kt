@@ -75,5 +75,5 @@ object OfflineChatHandler {
             " nahi ", " nahin ", " kyun ", " kaha ", " kaun ", " kholo ", " kholna "
         )
         return markers.any { padded.contains(it) }
-    }    }
+    }
 }
