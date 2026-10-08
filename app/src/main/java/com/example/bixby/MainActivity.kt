@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -66,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private val streamSpeechBuffer = StringBuilder()
     private val streamDisplayBuffer = StringBuilder()
     private var streamFinalUtteranceId: String? = null
+    private var micToneGenerator: ToneGenerator? = null
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -340,7 +343,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun speechLocale(): Locale =
-        if (Locale.getDefault().language == "hi") Locale("hi", "IN") else Locale("en", "IN")
+        if (Locale.getDefault().language == "hi") Locale("hi", "IN") else Locale.US
 
     private fun isHindiText(text: String): Boolean {
         if (text.any { it.code in 0x0900..0x097F }) return true
@@ -368,7 +371,7 @@ class MainActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
                 putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("hi-IN", "en-IN"))
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("hi-IN", "en-US"))
             }
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
@@ -376,6 +379,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
+            if (micToneGenerator == null) {
+                micToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            }
+            micToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
             speechRecognizer.startListening(intent)
         } catch (_: Exception) {
             statusText.text = "Couldn't start microphone"
@@ -546,7 +553,7 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "Online • streaming"
 
         val current = streamSpeechBuffer.toString()
-        val boundary = Regex("[.!?।]+\\s+").findLast(current)
+        val boundary = Regex("[.!?।]+\\s+").findAll(current).lastOrNull()
 
         if (boundary != null && boundary.range.last >= 20) {
             val sentence = current.substring(0, boundary.range.last + 1).trim()
@@ -1198,101 +1205,3 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "Action unavailable"
             Toast.makeText(
                 this,
-                "That action is unavailable on this phone.",
-                Toast.LENGTH_SHORT
-            ).show()
-        } catch (_: Exception) {
-            statusText.text = "Couldn't open"
-            Toast.makeText(
-                this,
-                "Couldn't open that action.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        when (requestCode) {
-            REQUEST_AUDIO -> {
-                statusText.text =
-                    if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                        "Microphone permission granted"
-                    } else {
-                        "Microphone permission required"
-                    }
-            }
-
-            REQUEST_CAMERA -> {
-                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                    val pending = pendingFlashlightCommand
-                    pendingFlashlightCommand = null
-
-                    if (pending != null) {
-                        toggleFlashlight(pending)
-                    } else {
-                        statusText.text = "Camera permission granted"
-                    }
-                } else {
-                    statusText.text = "Camera permission required for flashlight"
-                }
-            }
-
-            REQUEST_CALL, REQUEST_CONTACTS -> {
-                val target = pendingCallTarget ?: return
-                val number = extractPhoneNumber(target)
-
-                if (hasPermission(Manifest.permission.CALL_PHONE) &&
-                    (number != null || hasPermission(Manifest.permission.READ_CONTACTS))
-                ) {
-                    resolveAndCall(target)
-                } else {
-                    statusText.text = "Call permission required"
-                    Toast.makeText(
-                        this,
-                        "Phone or contacts permission is required.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-
-            REQUEST_STARTUP_PERMISSIONS -> {
-                val missing = arrayOf(
-                    Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.CALL_PHONE,
-                    Manifest.permission.READ_CONTACTS
-                ).count { !hasPermission(it) }
-
-                statusText.text =
-                    if (missing == 0) "Ready"
-                    else "Some permissions are still required"
-            }
-        }
-    }
-
-    private fun registerFloatingVoiceReceiver() {
-        val filter = IntentFilter(BixbyFloatingAccessService.ACTION_RECOGNIZED_COMMAND)
-        ContextCompat.registerReceiver(this, floatingVoiceReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-    }
-
-    override fun onDestroy() {
-        try { unregisterReceiver(floatingVoiceReceiver) } catch (_: Exception) { }
-        try {
-            speechRecognizer.destroy()
-        } catch (_: Exception) {
-        }
-        commandScope.cancel()
-        streamSpeechBuffer.setLength(0)
-        streamDisplayBuffer.setLength(0)
-        streamFinalUtteranceId = null
-        stopPulseAnimation()
-        if (::textToSpeech.isInitialized) textToSpeech.shutdown()
-        super.onDestroy()
-    }
-}
