@@ -177,7 +177,7 @@ class MainActivity : AppCompatActivity() {
 
         micButton.setOnClickListener {
             try {
-                startActivity(Intent(Intent.ACTION_VOICE_ASSIST))
+                startActivity(Intent(RecognizerIntent.ACTION_WEB_SEARCH))
             } catch (_: ActivityNotFoundException) {
                 try {
                     startActivity(Intent(Intent.ACTION_ASSIST))
