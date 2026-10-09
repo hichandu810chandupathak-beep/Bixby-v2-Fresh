@@ -177,13 +177,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            val voiceAssistIntent = Intent("android.intent.action.VOICE_ASSIST")
+            stopTone()
+            playListeningBeep()
+
+            val geminiPackage = "com.google.android.apps.bard"
+            val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).setPackage(geminiPackage)
             try {
-                startActivity(voiceAssistIntent)
-            } catch (_: ActivityNotFoundException) {
-                safeStartActivity(Intent(Intent.ACTION_ASSIST))
+                if (geminiAssistIntent.resolveActivity(packageManager) != null) {
+                    startActivity(geminiAssistIntent)
+                } else {
+                    val geminiLaunchIntent = packageManager.getLaunchIntentForPackage(geminiPackage)
+                    if (geminiLaunchIntent != null) {
+                        startActivity(geminiLaunchIntent)
+                    } else {
+                        Toast.makeText(this, "Google Gemini is not installed.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             } catch (_: Exception) {
-                safeStartActivity(Intent(Intent.ACTION_ASSIST))
+                val geminiLaunchIntent = packageManager.getLaunchIntentForPackage(geminiPackage)
+                if (geminiLaunchIntent != null) {
+                    startActivity(geminiLaunchIntent)
+                } else {
+                    Toast.makeText(this, "Google Gemini is not installed.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
