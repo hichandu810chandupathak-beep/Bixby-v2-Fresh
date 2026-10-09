@@ -70,7 +70,6 @@ class MainActivity : AppCompatActivity() {
     private var streamFinalUtteranceId: String? = null
     private var micToneGenerator: ToneGenerator? = null
     private var isListeningActive = false
-    private var listeningBeepPlayed = false
     private var cachedUniversalApps: Map<String, String>? = null
     private var completionBeepUtteranceId: String? = null
 
@@ -307,10 +306,6 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 isListeningActive = true
-                if (!listeningBeepPlayed) {
-                    listeningBeepPlayed = true
-                    playListeningBeep()
-                }
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
                 setOrbState(OrbState.LISTENING)
@@ -437,7 +432,6 @@ class MainActivity : AppCompatActivity() {
         }
         streamFinalUtteranceId = null
         completionBeepUtteranceId = null
-        listeningBeepPlayed = false
         isListeningActive = true
 
         try {
@@ -452,14 +446,6 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
         }
-    }
-
-    private fun playListeningBeep() {
-        if (micToneGenerator == null) {
-            micToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-        }
-        stopTone()
-        micToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
     }
 
     private fun playCompletionBeep() {
