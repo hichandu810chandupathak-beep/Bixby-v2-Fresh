@@ -308,6 +308,7 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 isListeningActive = true
+                playListeningBeep()
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
                 setOrbState(OrbState.LISTENING)
@@ -335,9 +336,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onError(error: Int) {
-                val wasActive = isListeningActive
                 resetListeningState()
-                if (wasActive) playCompletionBeep()
+                stopTone()
                 statusText.text = "Tap mic to try again"
                 setOrbState(OrbState.IDLE)
             }
@@ -413,7 +413,6 @@ class MainActivity : AppCompatActivity() {
         isListeningActive = true
 
         try {
-            playListeningBeep()
             speechRecognizer.startListening(intent)
         } catch (_: Exception) {
             resetListeningState()
@@ -454,7 +453,7 @@ class MainActivity : AppCompatActivity() {
     private fun finishListeningCycle() {
         if (!isListeningActive) return
         resetListeningState()
-        playCompletionBeep()
+        stopTone()
     }
 
     private fun cancelListening() {
