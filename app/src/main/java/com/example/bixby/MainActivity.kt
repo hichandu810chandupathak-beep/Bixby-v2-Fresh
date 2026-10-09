@@ -307,10 +307,6 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 isListeningActive = true
-                if (!listeningBeepPlayed) {
-                    listeningBeepPlayed = true
-                    playListeningBeep()
-                }
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
                 setOrbState(OrbState.LISTENING)
@@ -437,9 +433,6 @@ class MainActivity : AppCompatActivity() {
         }
         streamFinalUtteranceId = null
         completionBeepUtteranceId = null
-        // Play one start beep before starting recognition; onReadyForSpeech must not beep again.
-        listeningBeepPlayed = true
-        playListeningBeep()
         isListeningActive = true
 
         try {
