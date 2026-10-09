@@ -38,7 +38,7 @@ class AssistantAiHandler(private val context: android.content.Context) {
                 put("contents", buildConversation(prompt))
                 put("generationConfig", JSONObject().apply {
                     put("temperature", 0.7)
-                    put("maxOutputTokens", 384)
+                    put("maxOutputTokens", 320)
                 })
             }
 

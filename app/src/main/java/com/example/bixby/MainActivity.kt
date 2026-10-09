@@ -70,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     private var streamFinalUtteranceId: String? = null
     private var micToneGenerator: ToneGenerator? = null
     private var isListeningActive = false
+    private var listeningBeepPlayed = false
+    private var cachedUniversalApps: Map<String, String>? = null
     private var completionBeepUtteranceId: String? = null
 
     private var pendingCallTarget: String? = null
@@ -305,7 +307,10 @@ class MainActivity : AppCompatActivity() {
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 isListeningActive = true
-                playListeningBeep()
+                if (!listeningBeepPlayed) {
+                    listeningBeepPlayed = true
+                    playListeningBeep()
+                }
                 statusText.text = "Listening..."
                 greetingText.text = "I'm listening"
                 setOrbState(OrbState.LISTENING)
@@ -432,6 +437,7 @@ class MainActivity : AppCompatActivity() {
         }
         streamFinalUtteranceId = null
         completionBeepUtteranceId = null
+        listeningBeepPlayed = false
         isListeningActive = true
 
         try {
@@ -638,16 +644,10 @@ class MainActivity : AppCompatActivity() {
             }.onFailure { error ->
                 streamSpeechBuffer.setLength(0)
                 streamFinalUtteranceId = null
-                if (isActuallyOffline()) {
-                    val fallback = OfflineChatHandler.respond(command).trim()
-                    statusText.text = "Offline response"
-                    greetingText.text = fallback
-                    speakResponse(shortSpeechResponse(fallback))
-                } else {
-                    // Keep network/API diagnostics out of speech; show a brief message instead.
-                    statusText.text = "Gemini unavailable"
-                    greetingText.text = "Gemini is temporarily unavailable. Please try again."
-                }
+                val fallback = OfflineChatHandler.respond(command).trim()
+                statusText.text = if (isActuallyOffline()) "Offline response" else "Local fallback"
+                greetingText.text = fallback
+                speakResponse(shortSpeechResponse(fallback))
             }
         }
     }
@@ -945,11 +945,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val contactNumber = findContactNumberSafely(target)
+        val contact = findContactDetailsSafely(target)
 
-        if (contactNumber == null) {
+        if (contact == null) {
             pendingCallTarget = null
             statusText.text = "Contact not found"
+            greetingText.text = "Contact not found: $target"
             Toast.makeText(
                 this,
                 "I couldn't find $target in your contacts.",
@@ -958,19 +959,20 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        placeCallSafely(contactNumber)
+        placeCallSafely(contact.second, contact.first)
     }
 
-    private fun findContactNumberSafely(contactName: String): String? {
+    private fun findContactNumberSafely(contactName: String): String? =
+        findContactDetailsSafely(contactName)?.second
+
+    private fun findContactDetailsSafely(contactName: String): Pair<String, String>? {
         val normalizedTarget = normalizeContactName(contactName)
         if (normalizedTarget.isBlank()) return null
 
         return try {
             val displayName = ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
             val phoneNumber = ContactsContract.CommonDataKinds.Phone.NUMBER
-
             val projection = arrayOf(displayName, phoneNumber)
-
             val selection = "($displayName = ? COLLATE NOCASE) OR ($displayName LIKE ? COLLATE NOCASE)"
             val selectionArgs = arrayOf(contactName, "%$contactName%")
 
@@ -983,28 +985,23 @@ class MainActivity : AppCompatActivity() {
             )?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(displayName)
                 val numberIndex = cursor.getColumnIndex(phoneNumber)
-
-                var partialMatch: String? = null
+                var partialMatch: Pair<String, String>? = null
 
                 while (cursor.moveToNext()) {
                     val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
                     val number = if (numberIndex >= 0) cursor.getString(numberIndex) else null
-
                     if (number.isNullOrBlank()) continue
 
                     val normalizedName = normalizeContactName(name)
-
-                    if (normalizedName == normalizedTarget) {
-                        return@use number
-                    }
+                    val match = name to number
+                    if (normalizedName == normalizedTarget) return@use match
 
                     if (normalizedName.contains(normalizedTarget) ||
                         normalizedTarget.contains(normalizedName)
                     ) {
-                        partialMatch = partialMatch ?: number
+                        partialMatch = partialMatch ?: match
                     }
                 }
-
                 partialMatch
             }
         } catch (_: SecurityException) {
@@ -1017,7 +1014,7 @@ class MainActivity : AppCompatActivity() {
     private fun normalizeContactName(value: String): String =
         value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
 
-    private fun placeCallSafely(number: String) {
+    private fun placeCallSafely(number: String, contactName: String? = null) {
         if (number.isBlank()) {
             pendingCallTarget = null
             statusText.text = "Phone number unavailable"
@@ -1041,10 +1038,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         val callUri = Uri.parse("tel:$number")
+        val callLabel = contactName?.takeIf { it.isNotBlank() }
+            ?.let { "$it • $number" }
+            ?: number
 
         try {
-            statusText.text = "Calling $number..."
-            greetingText.text = "Calling $number..."
+            statusText.text = "Calling $callLabel..."
+            greetingText.text = if (contactName.isNullOrBlank()) {
+                "Calling $number..."
+            } else {
+                "Calling $contactName\n$number"
+            }
             startActivity(Intent(Intent.ACTION_CALL, callUri))
             pendingCallTarget = null
             return
@@ -1086,8 +1090,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Resolve in the background so the UI remains responsive; the launcher list is cached.
         commandScope.launch {
-            statusText.text = "Finding $appName..."
+            statusText.text = "Opening $appName..."
 
             val launchIntent = withContext(Dispatchers.IO) {
                 findLaunchIntentForApp(appName)
@@ -1126,8 +1131,14 @@ class MainActivity : AppCompatActivity() {
         val query = normalizeAppLookupText(appName)
         if (query.isBlank()) return null
 
-        // Exact aliases run before universal matching.
+        // Exact aliases run before universal matching to avoid scanning installed apps.
         val exactPackageAliases = mapOf(
+            "gallery" to "com.sec.android.gallery3d",
+            "samsunggallery" to "com.sec.android.gallery3d",
+            "youtube" to "com.google.android.youtube",
+            "youtubemusic" to "com.google.android.apps.youtube.music",
+            "samsungmusic" to "com.sec.android.app.music",
+            "music" to "com.sec.android.app.music",
             "playstore" to "com.android.vending",
             "googleplay" to "com.android.vending",
             "googleplaystore" to "com.android.vending",
@@ -1149,44 +1160,29 @@ class MainActivity : AppCompatActivity() {
             createPackageLaunchIntent(packageName)?.let { return it }
         }
 
-        // Combine launcher activities and all packages visible to PackageManager.
-        val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
-
-        val launcherActivities = try {
-            packageManager.queryIntentActivities(launcherIntent, 0)
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        val installedApplications = try {
-            packageManager.getInstalledApplications(PackageManager.MATCH_ALL)
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        // One entry per package: package name -> display label.
-        val universalApps = linkedMapOf<String, String>()
-
-        installedApplications.forEach { applicationInfo ->
-            val packageName = applicationInfo.packageName ?: return@forEach
-            val label = try {
-                packageManager.getApplicationLabel(applicationInfo).toString()
-            } catch (_: Exception) {
-                packageName
+        // Launcher activities are sufficient for app opening and much faster to query.
+        // Cache the package-to-label map for subsequent voice commands.
+        val universalApps = cachedUniversalApps ?: run {
+            val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
             }
-            universalApps.putIfAbsent(packageName, label)
-        }
-
-        launcherActivities.forEach { resolveInfo ->
-            val packageName = resolveInfo.activityInfo?.packageName ?: return@forEach
-            val label = try {
-                resolveInfo.loadLabel(packageManager).toString()
+            val launcherActivities = try {
+                packageManager.queryIntentActivities(launcherIntent, 0)
             } catch (_: Exception) {
-                packageName
+                emptyList()
             }
-            universalApps.putIfAbsent(packageName, label)
+            val apps = linkedMapOf<String, String>()
+            launcherActivities.forEach { resolveInfo ->
+                val packageName = resolveInfo.activityInfo?.packageName ?: return@forEach
+                val label = try {
+                    resolveInfo.loadLabel(packageManager).toString()
+                } catch (_: Exception) {
+                    packageName
+                }
+                apps.putIfAbsent(packageName, label)
+            }
+            cachedUniversalApps = apps
+            apps
         }
 
         val queryWords = appLookupWords(appName)
