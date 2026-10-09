@@ -176,7 +176,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            startListening()
+            try {
+                startActivity(Intent(Intent.ACTION_VOICE_ASSIST))
+            } catch (_: ActivityNotFoundException) {
+                try {
+                    startActivity(Intent(Intent.ACTION_ASSIST))
+                } catch (_: ActivityNotFoundException) {
+                    statusText.text = "No system voice assistant available"
+                }
+            }
         }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
