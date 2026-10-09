@@ -298,12 +298,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpeechRecognizer() {
-        speechRecognizer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-            SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-            SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-        } else {
-            SpeechRecognizer.createSpeechRecognizer(this)
-        }
+        // Use Android's configured recognition service so the selected Hindi/English
+        // locale is handled by the installed service rather than an on-device-only model.
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
 
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
@@ -338,7 +335,18 @@ class MainActivity : AppCompatActivity() {
             override fun onError(error: Int) {
                 resetListeningState()
                 stopTone()
-                statusText.text = "Tap mic to try again"
+                val message = when (error) {
+                    SpeechRecognizer.ERROR_AUDIO -> "Microphone audio error. Tap mic to retry."
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
+                    SpeechRecognizer.ERROR_NETWORK,
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                    SpeechRecognizer.ERROR_SERVER -> "Speech service unavailable. Check connection and retry."
+                    SpeechRecognizer.ERROR_NO_MATCH,
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected. Tap mic and speak after the beep."
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Microphone busy. Wait a moment and retry."
+                    else -> "Voice recognition failed. Tap mic to try again."
+                }
+                statusText.text = message
                 setOrbState(OrbState.IDLE)
             }
 
@@ -346,17 +354,24 @@ class MainActivity : AppCompatActivity() {
                 val matches = results?.getStringArrayList(
                     SpeechRecognizer.RESULTS_RECOGNITION
                 )
+                resetListeningState()
+                stopTone()
 
-                if (isListeningActive) {
-                    finishListeningCycle()
-                }
+                val command = matches
+                    ?.firstOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
 
-                if (!matches.isNullOrEmpty()) {
-                    val command = matches[0].lowercase(Locale.ROOT).trim()
+                if (command != null) {
+                    val normalizedCommand = command.lowercase(Locale.ROOT)
                     greetingText.text = "You said: \"$command\""
-                    executeCommand(command)
+                    statusText.text = "Processing..."
+                    setOrbState(OrbState.PROCESSING)
+                    executeCommand(normalizedCommand)
+                } else {
+                    statusText.text = "No speech detected. Tap mic to try again."
+                    setOrbState(OrbState.IDLE)
                 }
-                setOrbState(OrbState.IDLE)
             }
 
             override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -364,8 +379,18 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun speechLocale(): Locale =
-        if (Locale.getDefault().language == "hi") Locale("hi", "IN") else Locale.US
+    private fun speechLocale(): Locale {
+        val deviceLocale = Locale.getDefault()
+        return when (deviceLocale.language.lowercase(Locale.ROOT)) {
+            "hi" -> Locale("hi", "IN")
+            "en" -> if (deviceLocale.country.equals("IN", ignoreCase = true)) {
+                Locale("en", "IN")
+            } else {
+                Locale.US
+            }
+            else -> Locale.US
+        }
+    }
 
     private fun isHindiText(text: String): Boolean {
         if (text.any { it.code in 0x0900..0x097F }) return true
@@ -390,11 +415,8 @@ class MainActivity : AppCompatActivity() {
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLocale().toLanguageTag())
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
-                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("hi-IN", "en-US"))
-            }
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, speechLocale().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
