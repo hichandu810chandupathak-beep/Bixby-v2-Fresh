@@ -38,11 +38,8 @@ class AssistantAiHandler(private val context: android.content.Context) {
                 put("contents", buildConversation(prompt))
                 put("generationConfig", JSONObject().apply {
                     put("temperature", 0.7)
-                    put("maxOutputTokens", 512)
+                    put("maxOutputTokens", 384)
                 })
-                put("tools", JSONArray().put(
-                    JSONObject().put("google_search", JSONObject())
-                ))
             }
 
             val url = URL(
@@ -51,8 +48,8 @@ class AssistantAiHandler(private val context: android.content.Context) {
 
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 15000
-                readTimeout = 60000
+                connectTimeout = 8000
+                readTimeout = 25000
                 useCaches = false
                 doInput = true
                 doOutput = true

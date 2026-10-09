@@ -563,23 +563,36 @@ class MainActivity : AppCompatActivity() {
                 greetingText.text = "I'm listening"
             }
             OrbState.PROCESSING -> {
-                greetingText.text = "Thinking..."
+                // Keep the current command or response visible while work is in progress.
             }
         }
     }
 
     private fun executeCommand(command: String) {
+        val isDeviceCommand = isExitCommand(command) ||
+            isFlashlightCommand(command) ||
+            isWifiCommand(command) ||
+            isBluetoothCommand(command) ||
+            isCallCommand(command) ||
+            isOpenCommand(command)
+        if (isDeviceCommand) {
+            greetingText.text = "Command: $command"
+            statusText.text = "Executing command..."
+        }
+
         when {
             isExitCommand(command) -> goHome()
             isFlashlightCommand(command) -> toggleFlashlight(command)
 
             isWifiCommand(command) -> {
                 statusText.text = "Opening Wi-Fi controls"
+                greetingText.text = "Opening Wi-Fi controls"
                 safeStartActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             }
 
             isBluetoothCommand(command) -> {
                 statusText.text = "Opening Bluetooth controls"
+                greetingText.text = "Opening Bluetooth controls"
                 try {
                     safeStartActivity(
                         Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
@@ -605,9 +618,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Online mode"
+        statusText.text = "Connecting to Gemini..."
         setOrbState(OrbState.PROCESSING)
-        greetingText.text = "Listening to Gemini..."
+        greetingText.text = "Waiting for response..."
         streamSpeechBuffer.setLength(0)
         streamDisplayBuffer.setLength(0)
         streamFinalUtteranceId = null
@@ -620,22 +633,20 @@ class MainActivity : AppCompatActivity() {
             }
 
             online.onSuccess {
+                statusText.text = "Response ready"
                 flushStreamingSpeech()
             }.onFailure { error ->
+                streamSpeechBuffer.setLength(0)
+                streamFinalUtteranceId = null
                 if (isActuallyOffline()) {
-                    val fallback = OfflineChatHandler.respond(command)
-                    streamSpeechBuffer.setLength(0)
-                    streamFinalUtteranceId = null
-                    statusText.text = "Offline"
+                    val fallback = OfflineChatHandler.respond(command).trim()
+                    statusText.text = "Offline response"
                     greetingText.text = fallback
-                    speakResponse(fallback)
+                    speakResponse(shortSpeechResponse(fallback))
                 } else {
-                    streamSpeechBuffer.setLength(0)
-                    streamFinalUtteranceId = null
+                    // Keep network/API diagnostics out of speech; show a brief message instead.
                     statusText.text = "Gemini unavailable"
-                    greetingText.text = error.message
-                        ?: "Gemini connection failed. Please try again."
-                    speakResponse(greetingText.text.toString())
+                    greetingText.text = "Gemini is temporarily unavailable. Please try again."
                 }
             }
         }
@@ -710,6 +721,14 @@ class MainActivity : AppCompatActivity() {
         val network = manager.activeNetwork ?: return true
         val capabilities = manager.getNetworkCapabilities(network) ?: return true
         return !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun shortSpeechResponse(response: String): String {
+        val compact = response.replace(Regex("\\s+"), " ").trim()
+        if (compact.length <= 180) return compact
+        val firstSentence = Regex("^.{1,180}?[.!?।](?:\\s|$)").find(compact)?.value?.trim()
+        if (!firstSentence.isNullOrBlank()) return firstSentence
+        return compact.take(177).substringBeforeLast(' ').trimEnd() + "…"
     }
 
     private fun speakResponse(response: String) {
@@ -831,6 +850,7 @@ class MainActivity : AppCompatActivity() {
             cameraManager.setTorchMode(cameraId, flashlightOn)
             statusText.text =
                 if (flashlightOn) "Flashlight ON" else "Flashlight OFF"
+            greetingText.text = statusText.text
         } catch (_: SecurityException) {
             statusText.text = "Camera permission unavailable"
             Toast.makeText(
@@ -1024,6 +1044,7 @@ class MainActivity : AppCompatActivity() {
 
         try {
             statusText.text = "Calling $number..."
+            greetingText.text = "Calling $number..."
             startActivity(Intent(Intent.ACTION_CALL, callUri))
             pendingCallTarget = null
             return
@@ -1034,6 +1055,7 @@ class MainActivity : AppCompatActivity() {
 
         try {
             statusText.text = "Opening dialer"
+            greetingText.text = "Opening dialer"
             startActivity(Intent(Intent.ACTION_DIAL, callUri))
             pendingCallTarget = null
         } catch (_: Exception) {
@@ -1088,6 +1110,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 startActivity(launchIntent)
                 statusText.text = "Opening $appName"
+                greetingText.text = "Opening $appName"
             } catch (_: Exception) {
                 statusText.text = "Couldn't open $appName"
                 Toast.makeText(
