@@ -177,7 +177,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            startListening()
+            val voiceAssistIntent = Intent("android.intent.action.VOICE_ASSIST")
+            try {
+                startActivity(voiceAssistIntent)
+            } catch (_: ActivityNotFoundException) {
+                safeStartActivity(Intent(Intent.ACTION_ASSIST))
+            } catch (_: Exception) {
+                safeStartActivity(Intent(Intent.ACTION_ASSIST))
+            }
         }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
