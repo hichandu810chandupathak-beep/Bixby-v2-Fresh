@@ -177,30 +177,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            stopTone()
-            playListeningBeep()
-
-            val geminiPackage = "com.google.android.apps.bard"
-            val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).setPackage(geminiPackage)
-            try {
-                if (geminiAssistIntent.resolveActivity(packageManager) != null) {
-                    startActivity(geminiAssistIntent)
-                } else {
-                    val geminiLaunchIntent = packageManager.getLaunchIntentForPackage(geminiPackage)
-                    if (geminiLaunchIntent != null) {
-                        startActivity(geminiLaunchIntent)
-                    } else {
-                        Toast.makeText(this, "Google Gemini is not installed.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (_: Exception) {
-                val geminiLaunchIntent = packageManager.getLaunchIntentForPackage(geminiPackage)
-                if (geminiLaunchIntent != null) {
-                    startActivity(geminiLaunchIntent)
-                } else {
-                    Toast.makeText(this, "Google Gemini is not installed.", Toast.LENGTH_SHORT).show()
-                }
-            }
+            startListening()
         }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
@@ -460,7 +437,9 @@ class MainActivity : AppCompatActivity() {
         }
         streamFinalUtteranceId = null
         completionBeepUtteranceId = null
-        listeningBeepPlayed = false
+        // Play one start beep before starting recognition; onReadyForSpeech must not beep again.
+        listeningBeepPlayed = true
+        playListeningBeep()
         isListeningActive = true
 
         try {
