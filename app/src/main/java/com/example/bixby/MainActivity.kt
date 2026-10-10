@@ -624,6 +624,7 @@ class MainActivity : AppCompatActivity() {
 
         try {
             val intent = Intent(Intent.ACTION_ASSIST)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             startActivity(intent)
             statusText.text = "Sent to system assistant"
             setOrbState(OrbState.IDLE)
