@@ -29,6 +29,10 @@ import android.view.animation.LinearInterpolator
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.view.Gravity
+import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -73,6 +77,9 @@ class MainActivity : AppCompatActivity() {
     private var listeningBeepPlayed = false
     private var cachedUniversalApps: Map<String, String>? = null
     private var completionBeepUtteranceId: String? = null
+    private var conversationDialog: AlertDialog? = null
+    private var conversationResponseView: TextView? = null
+    private var conversationInputView: EditText? = null
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
@@ -613,53 +620,78 @@ class MainActivity : AppCompatActivity() {
                 speakResponse(shortSpeechResponse(response))
             }
 
-            else -> openSystemAssistant()
+            else -> askConversationalAi(command)
         }
     }
 
-    private fun openSystemAssistant() {
-        statusText.text = "Opening system assistant..."
-        greetingText.text = "Handing off to system assistant..."
-        setOrbState(OrbState.PROCESSING)
+    private fun showConversationalDialog(command: String) {
+        if (isFinishing || isDestroyed) return
 
-        val intent = Intent(Intent.ACTION_ASSIST).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        // Check resolution first so an unbound assistant never silently returns home.
-        if (intent.resolveActivity(packageManager) == null) {
-            statusText.text = "System assistant unavailable"
-            greetingText.text = "No system assistant is configured."
-            setOrbState(OrbState.IDLE)
-            Toast.makeText(
-                this,
-                "No system assistant is available. Set Google/Gemini as your phone's digital assistant.",
-                Toast.LENGTH_LONG
-            ).show()
+        if (conversationDialog?.isShowing == true) {
+            conversationResponseView?.text = "You: $command\n\nBixby AI: Thinking..."
             return
         }
 
-        try {
-            startActivity(intent)
-            statusText.text = "Sent to system assistant"
-            setOrbState(OrbState.IDLE)
-        } catch (_: ActivityNotFoundException) {
-            statusText.text = "System assistant unavailable"
-            setOrbState(OrbState.IDLE)
-            Toast.makeText(
-                this,
-                "No system assistant is available. Set Google/Gemini as your phone's digital assistant.",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (_: Exception) {
-            statusText.text = "System assistant unavailable"
-            setOrbState(OrbState.IDLE)
-            Toast.makeText(
-                this,
-                "Couldn't launch the system assistant. Check your phone's digital assistant setting.",
-                Toast.LENGTH_LONG
-            ).show()
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
         }
+        val responseScroll = ScrollView(this)
+        val responseView = TextView(this).apply {
+            text = "You: $command\n\nBixby AI: Thinking..."
+            textSize = 16f
+            setTextColor(Color.rgb(32, 33, 36))
+            setPadding(0, dp(8), 0, dp(12))
+            gravity = Gravity.START
+        }
+        responseScroll.addView(responseView, ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT
+        ))
+        content.addView(responseScroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(230)
+        ))
+
+        val followUpInput = EditText(this).apply {
+            hint = "Ask Bixby AI something else"
+            singleLine = true
+            imeOptions = EditorInfo.IME_ACTION_SEND
+        }
+        content.addView(followUpInput, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Bixby AI")
+            .setView(content)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Send", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val followUp = followUpInput.text.toString().trim()
+                if (followUp.isNotBlank()) {
+                    followUpInput.text?.clear()
+                    responseView.text = "You: $followUp\n\nBixby AI: Thinking..."
+                    greetingText.text = "You said: \"$followUp\""
+                    askConversationalAi(followUp)
+                }
+            }
+        }
+        dialog.setOnDismissListener {
+            if (conversationDialog === dialog) {
+                conversationDialog = null
+                conversationResponseView = null
+                conversationInputView = null
+            }
+        }
+        conversationDialog = dialog
+        conversationResponseView = responseView
+        conversationInputView = followUpInput
+        dialog.show()
     }
 
     private fun isBasicGreeting(command: String): Boolean =
@@ -675,6 +707,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
+        showConversationalDialog(command)
         statusText.text = "Connecting to Gemini..."
         setOrbState(OrbState.PROCESSING)
         greetingText.text = "Waiting for response..."
@@ -698,6 +731,7 @@ class MainActivity : AppCompatActivity() {
                 val fallback = OfflineChatHandler.respond(command).trim()
                 statusText.text = if (isActuallyOffline()) "Offline response" else "Local fallback"
                 greetingText.text = fallback
+                conversationResponseView?.text = fallback
                 speakResponse(shortSpeechResponse(fallback))
             }
         }
@@ -708,6 +742,7 @@ class MainActivity : AppCompatActivity() {
         streamSpeechBuffer.append(chunk)
         streamDisplayBuffer.append(chunk)
         greetingText.text = streamDisplayBuffer.toString().trim()
+        conversationResponseView?.text = streamDisplayBuffer.toString().trim()
         statusText.text = "Online • streaming"
 
         val current = streamSpeechBuffer.toString()
@@ -1132,7 +1167,7 @@ class MainActivity : AppCompatActivity() {
             .trim()
 
         if (appName.isBlank()) {
-            openSystemAssistant()
+            askConversationalAi(command)
             return
         }
 
@@ -1145,7 +1180,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (launchIntent == null) {
-                openSystemAssistant()
+                askConversationalAi(command)
                 return@launch
             }
 
@@ -1158,7 +1193,7 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Opening $appName"
                 greetingText.text = "Opening $appName"
             } catch (_: Exception) {
-                openSystemAssistant()
+                askConversationalAi(command)
             }
         }
     }
@@ -1458,6 +1493,10 @@ class MainActivity : AppCompatActivity() {
         micToneGenerator?.release()
         micToneGenerator = null
         commandScope.cancel()
+        conversationDialog?.dismiss()
+        conversationDialog = null
+        conversationResponseView = null
+        conversationInputView = null
         streamSpeechBuffer.setLength(0)
         streamDisplayBuffer.setLength(0)
         streamFinalUtteranceId = null
