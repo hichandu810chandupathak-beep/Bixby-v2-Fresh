@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
                         if (utteranceId == completionBeepUtteranceId) {
                             completionBeepUtteranceId = null
                             runOnUiThread {
-                                playCompletionBeep()
+                                streamFinalUtteranceId = null
                                 setOrbState(OrbState.IDLE)
                             }
                         } else if (utteranceId == streamFinalUtteranceId) {
@@ -614,7 +614,32 @@ class MainActivity : AppCompatActivity() {
                 speakResponse(shortSpeechResponse(response))
             }
 
-            else -> askConversationalAi(command)
+            else -> openSystemAssistant()
+        }
+    }
+
+    private fun openSystemAssistant() {
+        statusText.text = "Opening Ask Gemini..."
+        setOrbState(OrbState.PROCESSING)
+        try {
+            startActivity(Intent(Intent.ACTION_ASSIST))
+            statusText.text = "Ready"
+        } catch (_: ActivityNotFoundException) {
+            statusText.text = "System assistant unavailable"
+            setOrbState(OrbState.IDLE)
+            Toast.makeText(
+                this,
+                "No system assistant is available on this phone.",
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (_: Exception) {
+            statusText.text = "Couldn't open system assistant"
+            setOrbState(OrbState.IDLE)
+            Toast.makeText(
+                this,
+                "Couldn't open the system assistant.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
