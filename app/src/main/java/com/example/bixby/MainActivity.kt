@@ -24,6 +24,8 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams
 import android.view.inputmethod.EditorInfo
 import android.view.animation.LinearInterpolator
 import android.widget.EditText
@@ -647,8 +649,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, dp(12))
             gravity = Gravity.START
         }
-        responseScroll.addView(responseView, ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT
+        responseScroll.addView(responseView, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         content.addView(responseScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(230)
@@ -656,7 +658,7 @@ class MainActivity : AppCompatActivity() {
 
         val followUpInput = EditText(this).apply {
             hint = "Ask Bixby AI something else"
-            singleLine = true
+            setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEND
         }
         content.addView(followUpInput, LinearLayout.LayoutParams(
