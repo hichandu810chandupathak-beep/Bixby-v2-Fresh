@@ -86,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
     private var flashlightOn = false
+    private var overlayPermissionPromptedThisSession = false
 
     private val floatingVoiceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
@@ -195,6 +196,55 @@ class MainActivity : AppCompatActivity() {
             } else {
                 false
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ensureFloatingAccess()
+    }
+
+    private fun ensureFloatingAccess() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+            !Settings.canDrawOverlays(this)
+        ) {
+            if (!overlayPermissionPromptedThisSession &&
+                hasPermission(Manifest.permission.RECORD_AUDIO)
+            ) {
+                overlayPermissionPromptedThisSession = true
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(
+                        this,
+                        "Enable Bixby display-over-other-apps permission in Settings.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            return
+        }
+
+        if (!hasPermission(Manifest.permission.RECORD_AUDIO)) return
+
+        try {
+            val serviceIntent = Intent(this, BixbyFloatingAccessService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "Bixby floating access could not start. Check overlay and microphone permissions.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -1473,6 +1523,8 @@ class MainActivity : AppCompatActivity() {
                     else "Some permissions are still required"
             }
         }
+
+        ensureFloatingAccess()
     }
 
     private fun registerFloatingVoiceReceiver() {
