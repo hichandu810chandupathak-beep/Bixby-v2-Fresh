@@ -177,11 +177,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            try {
-                startActivity(Intent(Intent.ACTION_ASSIST))
-            } catch (_: ActivityNotFoundException) {
-                Toast.makeText(this, "No system assistant is available. Set Gemini as your default digital assistant.", Toast.LENGTH_LONG).show()
-            }
+            startListening()
         }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
@@ -610,9 +606,21 @@ class MainActivity : AppCompatActivity() {
             isCallCommand(command) -> handleCallCommand(command)
             isOpenCommand(command) -> openRequestedApp(command)
 
+            isBasicGreeting(command) -> {
+                val response = OfflineChatHandler.respond(command).trim()
+                statusText.text = "Ready"
+                greetingText.text = response
+                setOrbState(OrbState.IDLE)
+                speakResponse(shortSpeechResponse(response))
+            }
+
             else -> askConversationalAi(command)
         }
     }
+
+    private fun isBasicGreeting(command: String): Boolean =
+        command.trim().lowercase(Locale.ROOT)
+            .matches(Regex("^(hi|hello|hey|namaste|namaskar)[!. ]*$"))
 
     private fun submitTypedCommand() {
         val command = textInput.text.toString().trim()
