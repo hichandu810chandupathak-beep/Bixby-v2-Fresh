@@ -613,25 +613,18 @@ class MainActivity : AppCompatActivity() {
                 speakResponse(shortSpeechResponse(response))
             }
 
-            else -> openSystemAssistant(command)
+            else -> openSystemAssistant()
         }
     }
 
-    private fun openSystemAssistant(query: String? = null) {
+    private fun openSystemAssistant() {
         statusText.text = "Opening system assistant..."
         greetingText.text = "Handing off to system assistant..."
         setOrbState(OrbState.PROCESSING)
 
-        // Let Android choose the configured assistant. Include the recognized query
-        // when available; startActivity returning does not prove an overlay is visible.
         try {
-            val assistantIntent = Intent(Intent.ACTION_ASSIST).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                query?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                    putExtra(Intent.EXTRA_ASSIST_INPUT_QUERY, it)
-                }
-            }
-            startActivity(assistantIntent)
+            val intent = Intent(Intent.ACTION_ASSIST)
+            startActivity(intent)
             statusText.text = "Sent to system assistant"
             setOrbState(OrbState.IDLE)
         } catch (_: ActivityNotFoundException) {
@@ -1123,7 +1116,7 @@ class MainActivity : AppCompatActivity() {
             .trim()
 
         if (appName.isBlank()) {
-            openSystemAssistant(appName.ifBlank { command })
+            openSystemAssistant()
             return
         }
 
@@ -1136,7 +1129,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (launchIntent == null) {
-                openSystemAssistant(appName)
+                openSystemAssistant()
                 return@launch
             }
 
@@ -1149,7 +1142,7 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Opening $appName"
                 greetingText.text = "Opening $appName"
             } catch (_: Exception) {
-                openSystemAssistant(appName)
+                openSystemAssistant()
             }
         }
     }
