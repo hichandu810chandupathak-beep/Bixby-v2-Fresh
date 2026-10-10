@@ -622,11 +622,12 @@ class MainActivity : AppCompatActivity() {
         greetingText.text = "Opening Ask Gemini..."
         setOrbState(OrbState.PROCESSING)
 
-        // Prefer Google's assistant handler for the native overlay, then fall back
-        // to Android's configured assistant if that package/handler is unavailable.
+        // Try Gemini's app package first; never explicitly route to Google Search.
+        // If Gemini does not expose ACTION_ASSIST on this device, defer to the
+        // phone's configured digital assistant, which may provide the Gemini overlay.
         val assistantIntents = listOf(
             Intent(Intent.ACTION_ASSIST).apply {
-                setPackage("com.google.android.googlequicksearchbox")
+                setPackage("com.google.android.apps.bard")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             },
             Intent(Intent.ACTION_ASSIST).apply {
