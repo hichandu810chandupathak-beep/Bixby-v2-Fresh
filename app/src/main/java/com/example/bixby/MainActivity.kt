@@ -622,9 +622,24 @@ class MainActivity : AppCompatActivity() {
         greetingText.text = "Handing off to system assistant..."
         setOrbState(OrbState.PROCESSING)
 
+        val intent = Intent(Intent.ACTION_ASSIST).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        // Check resolution first so an unbound assistant never silently returns home.
+        if (intent.resolveActivity(packageManager) == null) {
+            statusText.text = "System assistant unavailable"
+            greetingText.text = "No system assistant is configured."
+            setOrbState(OrbState.IDLE)
+            Toast.makeText(
+                this,
+                "No system assistant is available. Set Google/Gemini as your phone's digital assistant.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
         try {
-            val intent = Intent(Intent.ACTION_ASSIST)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             startActivity(intent)
             statusText.text = "Sent to system assistant"
             setOrbState(OrbState.IDLE)
