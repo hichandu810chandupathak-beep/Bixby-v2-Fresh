@@ -177,7 +177,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         micButton.setOnClickListener {
-            startListening()
+            try {
+                startActivity(Intent(Intent.ACTION_ASSIST))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, "No system assistant is available. Set Gemini as your default digital assistant.", Toast.LENGTH_LONG).show()
+            }
         }
 
         textInput.setOnEditorActionListener { _, actionId, _ ->
