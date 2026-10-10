@@ -4,15 +4,12 @@ import android.Manifest
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.net.Uri
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
@@ -31,10 +28,6 @@ import android.view.animation.LinearInterpolator
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.view.Gravity
-import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -79,23 +72,10 @@ class MainActivity : AppCompatActivity() {
     private var listeningBeepPlayed = false
     private var cachedUniversalApps: Map<String, String>? = null
     private var completionBeepUtteranceId: String? = null
-    private var conversationDialog: AlertDialog? = null
-    private var conversationResponseView: TextView? = null
-    private var conversationInputView: EditText? = null
 
     private var pendingCallTarget: String? = null
     private var pendingFlashlightCommand: String? = null
     private var flashlightOn = false
-    private var overlayPermissionPromptedThisSession = false
-
-    private val floatingVoiceReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context?, intent: Intent?) {
-            val command = intent?.getStringExtra(BixbyFloatingAccessService.EXTRA_RECOGNIZED_COMMAND)?.trim()?.takeIf { it.isNotEmpty() } ?: return
-            greetingText.text = "You said: \"$command\""
-            executeCommand(command.lowercase(Locale.ROOT))
-        }
-    }
-
     private val commandScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pulseScaleAnimator: ValueAnimator? = null
     private var pulseAlphaAnimator: ValueAnimator? = null
@@ -176,7 +156,6 @@ class MainActivity : AppCompatActivity() {
         setupSpeechRecognizer()
         requestRequiredPermissionsIfNeeded()
         setOrbState(OrbState.IDLE)
-        registerFloatingVoiceReceiver()
 
         if (startListeningFromExternal) {
             window.decorView.post {
@@ -201,51 +180,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        ensureFloatingAccess()
-    }
-
-    private fun ensureFloatingAccess() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(this)
-        ) {
-            if (!overlayPermissionPromptedThisSession &&
-                hasPermission(Manifest.permission.RECORD_AUDIO)
-            ) {
-                overlayPermissionPromptedThisSession = true
-                try {
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                    )
-                } catch (_: Exception) {
-                    Toast.makeText(
-                        this,
-                        "Enable Bixby display-over-other-apps permission in Settings.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-            return
-        }
-
-        if (!hasPermission(Manifest.permission.RECORD_AUDIO)) return
-
-        try {
-            val serviceIntent = Intent(this, BixbyFloatingAccessService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-        } catch (_: Exception) {
-            Toast.makeText(
-                this,
-                "Bixby floating access could not start. Check overlay and microphone permissions.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        // Shut down any previously active floating overlay.
+        stopService(Intent(this, BixbyFloatingAccessService::class.java))
     }
 
     private fun setupOrb() {
@@ -676,116 +612,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showConversationalDialog(command: String) {
-        if (isFinishing || isDestroyed) return
-
-        if (conversationDialog?.isShowing == true) {
-            conversationResponseView?.text = "You: $command\n\nBixby AI: Thinking..."
-            return
-        }
-
-        val density = resources.displayMetrics.density
-        fun dp(value: Int): Int = (value * density).toInt()
-
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        val responseScroll = ScrollView(this)
-        val responseView = TextView(this).apply {
-            text = "You: $command\n\nBixby AI: Thinking..."
-            textSize = 16f
-            setTextColor(Color.rgb(32, 33, 36))
-            setPadding(0, dp(8), 0, dp(12))
-            gravity = Gravity.START
-        }
-        responseScroll.addView(responseView, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        content.addView(responseScroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(230)
-        ))
-
-        val followUpInput = EditText(this).apply {
-            hint = "Ask Bixby AI something else"
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_SEND
-        }
-        content.addView(followUpInput, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Bixby AI")
-            .setView(content)
-            .setNegativeButton("Close", null)
-            .setPositiveButton("Send", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val followUp = followUpInput.text.toString().trim()
-                if (followUp.isNotBlank()) {
-                    followUpInput.text?.clear()
-                    responseView.text = "You: $followUp\n\nBixby AI: Thinking..."
-                    greetingText.text = "You said: \"$followUp\""
-                    askConversationalAi(followUp)
-                }
-            }
-        }
-        dialog.setOnDismissListener {
-            if (conversationDialog === dialog) {
-                conversationDialog = null
-                conversationResponseView = null
-                conversationInputView = null
-            }
-        }
-        conversationDialog = dialog
-        conversationResponseView = responseView
-        conversationInputView = followUpInput
-        dialog.show()
-    }
-
-    private fun isBasicGreeting(command: String): Boolean =
-        command.trim().lowercase(Locale.ROOT)
-            .matches(Regex("^(hi|hello|hey|namaste|namaskar)[!. ]*$"))
-
-    private fun submitTypedCommand() {
-        val command = textInput.text.toString().trim()
-        if (command.isBlank()) return
-        textInput.text?.clear()
-        greetingText.text = "You said: \"$command\""
-        executeCommand(command.lowercase(Locale.ROOT))
-    }
-
     private fun askConversationalAi(command: String) {
-        showConversationalDialog(command)
-        statusText.text = "Connecting to Gemini..."
+        statusText.text = "Opening Google Assistant..."
+        greetingText.text = "Opening system assistant"
         setOrbState(OrbState.PROCESSING)
-        greetingText.text = "Waiting for response..."
-        streamSpeechBuffer.setLength(0)
-        streamDisplayBuffer.setLength(0)
-        streamFinalUtteranceId = null
 
-        commandScope.launch {
-            val online = aiHandler.generateResponseStream(command) { chunk ->
-                commandScope.launch(Dispatchers.Main.immediate) {
-                    enqueueStreamingSpeech(chunk)
+        val assistantIntent = Intent(Intent.ACTION_ASSIST).apply {
+            setPackage("com.google.android.googlequicksearchbox")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            // Stable platform extra name avoids depending on newer compile-SDK constants.
+            putExtra("android.intent.extra.ASSIST_INPUT_QUERY", command)
+        }
+
+        try {
+            startActivity(assistantIntent)
+            statusText.text = "Sent to Google Assistant"
+        } catch (_: ActivityNotFoundException) {
+            val geminiIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.bard")
+                ?: packageManager.getLaunchIntentForPackage("com.google.android.apps.gemini")
+            if (geminiIntent != null) {
+                try {
+                    geminiIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    startActivity(geminiIntent)
+                    statusText.text = "Opening Gemini"
+                } catch (_: Exception) {
+                    statusText.text = "Google/Gemini assistant unavailable"
+                    Toast.makeText(this, "Set Google or Gemini as your phone's digital assistant, then try again.", Toast.LENGTH_LONG).show()
                 }
+            } else {
+                statusText.text = "Google/Gemini assistant unavailable"
+                Toast.makeText(this, "Install or enable Google/Gemini and set it as your phone's digital assistant.", Toast.LENGTH_LONG).show()
             }
-
-            online.onSuccess {
-                statusText.text = "Response ready"
-                flushStreamingSpeech()
-            }.onFailure { error ->
-                streamSpeechBuffer.setLength(0)
-                streamFinalUtteranceId = null
-                val fallback = OfflineChatHandler.respond(command).trim()
-                statusText.text = if (isActuallyOffline()) "Offline response" else "Local fallback"
-                greetingText.text = fallback
-                conversationResponseView?.text = fallback
-                speakResponse(shortSpeechResponse(fallback))
-            }
+        } catch (_: Exception) {
+            statusText.text = "Google/Gemini assistant unavailable"
+            Toast.makeText(this, "Couldn't open Google/Gemini assistant. Check your phone's digital assistant setting.", Toast.LENGTH_LONG).show()
+        } finally {
+            setOrbState(OrbState.IDLE)
         }
     }
 
@@ -794,7 +656,6 @@ class MainActivity : AppCompatActivity() {
         streamSpeechBuffer.append(chunk)
         streamDisplayBuffer.append(chunk)
         greetingText.text = streamDisplayBuffer.toString().trim()
-        conversationResponseView?.text = streamDisplayBuffer.toString().trim()
         statusText.text = "Online • streaming"
 
         val current = streamSpeechBuffer.toString()
@@ -1523,17 +1384,9 @@ class MainActivity : AppCompatActivity() {
                     else "Some permissions are still required"
             }
         }
-
-        ensureFloatingAccess()
-    }
-
-    private fun registerFloatingVoiceReceiver() {
-        val filter = IntentFilter(BixbyFloatingAccessService.ACTION_RECOGNIZED_COMMAND)
-        ContextCompat.registerReceiver(this, floatingVoiceReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(floatingVoiceReceiver) } catch (_: Exception) { }
         try {
             speechRecognizer.cancel()
         } catch (_: Exception) {
@@ -1547,10 +1400,6 @@ class MainActivity : AppCompatActivity() {
         micToneGenerator?.release()
         micToneGenerator = null
         commandScope.cancel()
-        conversationDialog?.dismiss()
-        conversationDialog = null
-        conversationResponseView = null
-        conversationInputView = null
         streamSpeechBuffer.setLength(0)
         streamDisplayBuffer.setLength(0)
         streamFinalUtteranceId = null
