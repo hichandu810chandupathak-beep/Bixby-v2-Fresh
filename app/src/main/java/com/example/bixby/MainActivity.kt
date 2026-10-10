@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
@@ -176,12 +177,6 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Shut down any previously active floating overlay.
-        stopService(Intent(this, BixbyFloatingAccessService::class.java))
     }
 
     private fun setupOrb() {
@@ -610,6 +605,18 @@ class MainActivity : AppCompatActivity() {
 
             else -> askConversationalAi(command)
         }
+    }
+
+    private fun isBasicGreeting(command: String): Boolean =
+        command.trim().lowercase(Locale.ROOT)
+            .matches(Regex("^(hi|hello|hey|namaste|namaskar)[!. ]*$"))
+
+    private fun submitTypedCommand() {
+        val command = textInput.text.toString().trim()
+        if (command.isBlank()) return
+        textInput.text?.clear()
+        greetingText.text = "You said: \"$command\""
+        executeCommand(command.lowercase(Locale.ROOT))
     }
 
     private fun askConversationalAi(command: String) {
