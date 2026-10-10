@@ -619,6 +619,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openSystemAssistant() {
         statusText.text = "Opening Ask Gemini..."
+        greetingText.text = "Opening Ask Gemini..."
         setOrbState(OrbState.PROCESSING)
         try {
             startActivity(Intent(Intent.ACTION_ASSIST))
