@@ -613,24 +613,26 @@ class MainActivity : AppCompatActivity() {
                 speakResponse(shortSpeechResponse(response))
             }
 
-            else -> openSystemAssistant()
+            else -> openSystemAssistant(command)
         }
     }
 
-    private fun openSystemAssistant() {
-        statusText.text = "Opening Ask Gemini..."
-        greetingText.text = "Opening Ask Gemini..."
+    private fun openSystemAssistant(query: String? = null) {
+        statusText.text = "Opening system assistant..."
+        greetingText.text = "Handing off to system assistant..."
         setOrbState(OrbState.PROCESSING)
 
-        // Use Android's standard assistant route only; do not pin ACTION_ASSIST
-        // to a package so the phone's configured digital assistant handles it.
+        // Let Android choose the configured assistant. Include the recognized query
+        // when available; startActivity returning does not prove an overlay is visible.
         try {
-            startActivity(
-                Intent(Intent.ACTION_ASSIST).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val assistantIntent = Intent(Intent.ACTION_ASSIST).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                query?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    putExtra(Intent.EXTRA_ASSIST_INPUT_QUERY, it)
                 }
-            )
-            statusText.text = "Assistant opened"
+            }
+            startActivity(assistantIntent)
+            statusText.text = "Sent to system assistant"
             setOrbState(OrbState.IDLE)
         } catch (_: ActivityNotFoundException) {
             statusText.text = "System assistant unavailable"
@@ -1121,7 +1123,7 @@ class MainActivity : AppCompatActivity() {
             .trim()
 
         if (appName.isBlank()) {
-            openSystemAssistant()
+            openSystemAssistant(appName.ifBlank { command })
             return
         }
 
@@ -1134,7 +1136,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (launchIntent == null) {
-                openSystemAssistant()
+                openSystemAssistant(appName)
                 return@launch
             }
 
@@ -1147,7 +1149,7 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Opening $appName"
                 greetingText.text = "Opening $appName"
             } catch (_: Exception) {
-                openSystemAssistant()
+                openSystemAssistant(appName)
             }
         }
     }
