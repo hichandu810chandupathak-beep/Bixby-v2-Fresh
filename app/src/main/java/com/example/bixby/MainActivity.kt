@@ -622,42 +622,33 @@ class MainActivity : AppCompatActivity() {
         greetingText.text = "Opening Ask Gemini..."
         setOrbState(OrbState.PROCESSING)
 
-        // Try Gemini's app package first; never explicitly route to Google Search.
-        // If Gemini does not expose ACTION_ASSIST on this device, defer to the
-        // phone's configured digital assistant, which may provide the Gemini overlay.
-        val assistantIntents = listOf(
-            Intent(Intent.ACTION_ASSIST).apply {
-                setPackage("com.google.android.apps.bard")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            },
-            Intent(Intent.ACTION_ASSIST).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-        )
-
-        var lastError: Exception? = null
-        for (assistantIntent in assistantIntents) {
-            try {
-                startActivity(assistantIntent)
-                statusText.text = "Assistant opened"
-                setOrbState(OrbState.IDLE)
-                return
-            } catch (error: Exception) {
-                lastError = error
-            }
+        // Use Android's standard assistant route only; do not pin ACTION_ASSIST
+        // to a package so the phone's configured digital assistant handles it.
+        try {
+            startActivity(
+                Intent(Intent.ACTION_ASSIST).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+            )
+            statusText.text = "Assistant opened"
+            setOrbState(OrbState.IDLE)
+        } catch (_: ActivityNotFoundException) {
+            statusText.text = "System assistant unavailable"
+            setOrbState(OrbState.IDLE)
+            Toast.makeText(
+                this,
+                "No system assistant is available. Set Google/Gemini as your phone's digital assistant.",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (_: Exception) {
+            statusText.text = "System assistant unavailable"
+            setOrbState(OrbState.IDLE)
+            Toast.makeText(
+                this,
+                "Couldn't launch the system assistant. Check your phone's digital assistant setting.",
+                Toast.LENGTH_LONG
+            ).show()
         }
-
-        statusText.text = "System assistant unavailable"
-        setOrbState(OrbState.IDLE)
-        Toast.makeText(
-            this,
-            if (lastError is ActivityNotFoundException) {
-                "Google Assistant/Gemini isn't available as a system assistant. Set Google/Gemini as your phone's digital assistant."
-            } else {
-                "Couldn't launch the system assistant. Check your phone's digital assistant setting."
-            },
-            Toast.LENGTH_LONG
-        ).show()
     }
 
     private fun isBasicGreeting(command: String): Boolean =
