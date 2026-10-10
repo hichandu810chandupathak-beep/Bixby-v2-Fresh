@@ -145,7 +145,6 @@ class MainActivity : AppCompatActivity() {
                         if (utteranceId == completionBeepUtteranceId) {
                             completionBeepUtteranceId = null
                             runOnUiThread {
-                                playCompletionBeep()
                                 setOrbState(OrbState.IDLE)
                             }
                         } else if (utteranceId == streamFinalUtteranceId) {
@@ -1113,12 +1112,7 @@ class MainActivity : AppCompatActivity() {
             .trim()
 
         if (appName.isBlank()) {
-            statusText.text = "Please say an app name"
-            Toast.makeText(
-                this,
-                "Please tell me which app to open.",
-                Toast.LENGTH_SHORT
-            ).show()
+            openSystemAssistant()
             return
         }
 
@@ -1131,12 +1125,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (launchIntent == null) {
-                statusText.text = "App not found"
-                Toast.makeText(
-                    this@MainActivity,
-                    "I couldn't find a launchable app named $appName on this phone.",
-                    Toast.LENGTH_SHORT
-                ).show()
+                openSystemAssistant()
                 return@launch
             }
 
@@ -1149,12 +1138,7 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Opening $appName"
                 greetingText.text = "Opening $appName"
             } catch (_: Exception) {
-                statusText.text = "Couldn't open $appName"
-                Toast.makeText(
-                    this@MainActivity,
-                    "I found $appName, but Android couldn't launch it.",
-                    Toast.LENGTH_SHORT
-                ).show()
+                openSystemAssistant()
             }
         }
     }
