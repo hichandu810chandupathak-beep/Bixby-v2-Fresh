@@ -623,6 +623,7 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "You: $command"
         try {
             val intent = Intent(Intent.ACTION_ASSIST).apply {
+                putExtra(Intent.EXTRA_ASSIST_INPUT_QUERY, command)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
