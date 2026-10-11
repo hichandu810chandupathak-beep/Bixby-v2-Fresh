@@ -620,41 +620,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun askConversationalAi(command: String) {
-        statusText.text = "Opening Google Assistant..."
-        greetingText.text = "Opening system assistant"
-        setOrbState(OrbState.PROCESSING)
-
-        val assistantIntent = Intent(Intent.ACTION_ASSIST).apply {
-            setPackage("com.google.android.googlequicksearchbox")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            // Stable platform extra name avoids depending on newer compile-SDK constants.
-            putExtra("android.intent.extra.ASSIST_INPUT_QUERY", command)
-        }
-
+        statusText.text = "You: $command"
         try {
-            startActivity(assistantIntent)
-            statusText.text = "Sent to Google Assistant"
-        } catch (_: ActivityNotFoundException) {
-            val geminiIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.bard")
-                ?: packageManager.getLaunchIntentForPackage("com.google.android.apps.gemini")
-            if (geminiIntent != null) {
-                try {
-                    geminiIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    startActivity(geminiIntent)
-                    statusText.text = "Opening Gemini"
-                } catch (_: Exception) {
-                    statusText.text = "Google/Gemini assistant unavailable"
-                    Toast.makeText(this, "Set Google or Gemini as your phone's digital assistant, then try again.", Toast.LENGTH_LONG).show()
-                }
-            } else {
-                statusText.text = "Google/Gemini assistant unavailable"
-                Toast.makeText(this, "Install or enable Google/Gemini and set it as your phone's digital assistant.", Toast.LENGTH_LONG).show()
+            val intent = Intent(Intent.ACTION_ASSIST).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            startActivity(intent)
         } catch (_: Exception) {
-            statusText.text = "Google/Gemini assistant unavailable"
-            Toast.makeText(this, "Couldn't open Google/Gemini assistant. Check your phone's digital assistant setting.", Toast.LENGTH_LONG).show()
-        } finally {
-            setOrbState(OrbState.IDLE)
+            statusText.text = "Error launching assistant"
         }
     }
 
