@@ -622,45 +622,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun askConversationalAi(command: String) {
         statusText.text = "You: $command"
+
         try {
-            val assistIntent = Intent(Intent.ACTION_ASSIST).apply {
+            val geminiPackage = "com.google.android.apps.bard"
+
+            // Target Gemini directly; do not resolve Google Search as fallback.
+            val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).apply {
+                setPackage(geminiPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val preferredPackages = setOf(
-                "com.google.android.googlequicksearchbox",
-                "com.google.android.apps.bard",
-                "com.google.android.apps.googleassistant"
-            )
-            val matchedActivity = packageManager
-                .queryIntentActivities(assistIntent, PackageManager.MATCH_DEFAULT_ONLY)
-                .firstOrNull { resolveInfo ->
-                    resolveInfo.activityInfo?.packageName?.let(preferredPackages::contains) == true
-                }
-                ?.activityInfo
-            val resolvedActivity = matchedActivity
-                ?: packageManager.resolveActivity(
-                    assistIntent,
-                    PackageManager.MATCH_DEFAULT_ONLY
-                )?.activityInfo
 
-            if (resolvedActivity != null &&
-                resolvedActivity.packageName != "android" &&
-                !resolvedActivity.packageName.startsWith("com.android.")
-            ) {
-                val explicitIntent = Intent(Intent.ACTION_ASSIST).apply {
-                    component = ComponentName(
-                        resolvedActivity.packageName,
-                        resolvedActivity.name
-                    )
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(explicitIntent)
+            val resolvedGemini = packageManager.resolveActivity(
+                geminiAssistIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+
+            if (resolvedGemini != null) {
+                startActivity(geminiAssistIntent)
             } else {
-                // Keep Android's normal assistant resolution as a safe fallback.
-                startActivity(assistIntent)
+                // If ACTION_ASSIST is unsupported, open Gemini's own app.
+                val geminiLaunchIntent =
+                    packageManager.getLaunchIntentForPackage(geminiPackage)
+
+                if (geminiLaunchIntent != null) {
+                    geminiLaunchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+                    startActivity(geminiLaunchIntent)
+                } else {
+                    statusText.text = "Gemini app not found"
+                }
             }
         } catch (_: Exception) {
-            statusText.text = "Error launching assistant"
+            statusText.text = "Unable to open Gemini"
         }
     }
 
