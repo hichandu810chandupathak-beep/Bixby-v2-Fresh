@@ -3,6 +3,7 @@ package com.example.bixby
 import android.Manifest
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -622,10 +623,42 @@ class MainActivity : AppCompatActivity() {
     private fun askConversationalAi(command: String) {
         statusText.text = "You: $command"
         try {
-            val intent = Intent(Intent.ACTION_ASSIST).apply {
+            val assistIntent = Intent(Intent.ACTION_ASSIST).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(intent)
+            val preferredPackages = setOf(
+                "com.google.android.googlequicksearchbox",
+                "com.google.android.apps.bard",
+                "com.google.android.apps.googleassistant"
+            )
+            val matchedActivity = packageManager
+                .queryIntentActivities(assistIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                .firstOrNull { resolveInfo ->
+                    resolveInfo.activityInfo?.packageName?.let(preferredPackages::contains) == true
+                }
+                ?.activityInfo
+            val resolvedActivity = matchedActivity
+                ?: packageManager.resolveActivity(
+                    assistIntent,
+                    PackageManager.MATCH_DEFAULT_ONLY
+                )?.activityInfo
+
+            if (resolvedActivity != null &&
+                resolvedActivity.packageName != "android" &&
+                !resolvedActivity.packageName.startsWith("com.android.")
+            ) {
+                val explicitIntent = Intent(Intent.ACTION_ASSIST).apply {
+                    component = ComponentName(
+                        resolvedActivity.packageName,
+                        resolvedActivity.name
+                    )
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(explicitIntent)
+            } else {
+                // Keep Android's normal assistant resolution as a safe fallback.
+                startActivity(assistIntent)
+            }
         } catch (_: Exception) {
             statusText.text = "Error launching assistant"
         }
