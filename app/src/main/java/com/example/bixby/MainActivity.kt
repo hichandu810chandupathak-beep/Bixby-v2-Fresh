@@ -624,6 +624,38 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "You: $command"
 
         try {
+            val dialog = android.app.AlertDialog.Builder(this)
+                .setTitle("Bixby AI")
+                .setMessage("Continue this conversation with Gemini?\n\nYour message:\n$command")
+                .setNegativeButton("Cancel") { popup, _ -> popup.dismiss() }
+                .setPositiveButton("Open Gemini") { popup, _ ->
+                    popup.dismiss()
+                    openGeminiWithSafeIntent()
+                }
+                .create()
+
+            dialog.setOnShowListener {
+                try {
+                    val window = dialog.window
+                    if (window != null) {
+                        val metrics = resources.displayMetrics
+                        window.setLayout(
+                            (metrics.widthPixels * 0.90f).toInt(),
+                            (metrics.heightPixels * 0.50f).toInt()
+                        )
+                    }
+                } catch (_: Exception) {
+                    // Keep the dialog usable if window sizing is unavailable.
+                }
+            }
+            dialog.show()
+        } catch (_: Exception) {
+            statusText.text = "Unable to show Gemini dialog"
+        }
+    }
+
+    private fun openGeminiWithSafeIntent() {
+        try {
             val geminiPackage = "com.google.android.apps.bard"
 
             // Target Gemini directly; do not resolve Google Search as fallback.
