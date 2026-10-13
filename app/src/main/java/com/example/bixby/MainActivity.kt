@@ -623,40 +623,168 @@ class MainActivity : AppCompatActivity() {
     private fun askConversationalAi(command: String) {
         statusText.text = "You: $command"
 
-        try {
-            val geminiPackage = "com.google.android.apps.bard"
-
-            // Target Gemini directly; do not resolve Google Search as fallback.
-            val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).apply {
-                setPackage(geminiPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            val resolvedGemini = packageManager.resolveActivity(
-                geminiAssistIntent,
-                PackageManager.MATCH_DEFAULT_ONLY
-            )
-
-            if (resolvedGemini != null) {
-                startActivity(geminiAssistIntent)
-            } else {
-                // If ACTION_ASSIST is unsupported, open Gemini's own app.
-                val geminiLaunchIntent =
-                    packageManager.getLaunchIntentForPackage(geminiPackage)
-
-                if (geminiLaunchIntent != null) {
-                    geminiLaunchIntent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK
-                    )
-                    startActivity(geminiLaunchIntent)
-                } else {
-                    statusText.text = "Gemini app not found"
-                }
-            }
+        // Brief Bixby-owned visual feedback before handing off to Gemini.
+        val feedbackDialog = try {
+            showConversationalFeedbackSheet(command)
         } catch (_: Exception) {
-            statusText.text = "Unable to open Gemini"
+            null
         }
+
+        window.decorView.postDelayed({
+            try {
+                val geminiPackage = "com.google.android.apps.bard"
+
+                // Target Gemini directly; do not resolve Google Search as fallback.
+                val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).apply {
+                    setPackage(geminiPackage)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                val resolvedGemini = packageManager.resolveActivity(
+                    geminiAssistIntent,
+                    PackageManager.MATCH_DEFAULT_ONLY
+                )
+
+                if (resolvedGemini != null) {
+                    startActivity(geminiAssistIntent)
+                } else {
+                    // If ACTION_ASSIST is unsupported, open Gemini's own app.
+                    val geminiLaunchIntent =
+                        packageManager.getLaunchIntentForPackage(geminiPackage)
+
+                    if (geminiLaunchIntent != null) {
+                        geminiLaunchIntent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                        )
+                        startActivity(geminiLaunchIntent)
+                    } else {
+                        statusText.text = "Gemini app not found"
+                        feedbackDialog?.dismiss()
+                    }
+                }
+            } catch (_: Exception) {
+                statusText.text = "Unable to open Gemini"
+                feedbackDialog?.dismiss()
+            }
+        }, 220L)
     }
+
+    private fun showConversationalFeedbackSheet(command: String): android.app.Dialog {
+        val dialog = android.app.Dialog(this)
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(24), dp(22), dp(24), dp(26))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(18, 28, 52), Color.rgb(24, 45, 82))
+            ).apply {
+                cornerRadii = floatArrayOf(
+                    dp(28).toFloat(), dp(28).toFloat(),
+                    dp(28).toFloat(), dp(28).toFloat(),
+                    dp(0).toFloat(), dp(0).toFloat(),
+                    dp(0).toFloat(), dp(0).toFloat()
+                )
+            }
+        }
+
+        val handle = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(3).toFloat()
+                setColor(Color.rgb(125, 145, 180))
+            }
+        }
+        root.addView(handle, android.widget.LinearLayout.LayoutParams(dp(42), dp(5)).apply {
+            bottomMargin = dp(18)
+        })
+
+        val heading = TextView(this).apply {
+            text = "Bixby AI"
+            setTextColor(Color.WHITE)
+            textSize = 21f
+            gravity = Gravity.CENTER
+        }
+        root.addView(heading, android.widget.LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT
+        ))
+
+        val subtitle = TextView(this).apply {
+            text = "Connecting to Gemini…"
+            setTextColor(Color.rgb(190, 210, 245))
+            textSize = 14f
+            gravity = Gravity.CENTER
+        }
+        root.addView(subtitle, android.widget.LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(5) })
+
+        val wave = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        root.addView(wave, android.widget.LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, dp(76)
+        ).apply { topMargin = dp(12) })
+
+        val animators = mutableListOf<ValueAnimator>()
+        val heights = listOf(18, 34, 48, 28, 56, 32, 46, 24, 40)
+        heights.forEachIndexed { index, height ->
+            val bar = View(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(4).toFloat()
+                    setColor(if (index % 2 == 0) Color.rgb(138, 180, 248) else Color.rgb(66, 133, 244))
+                }
+                scaleY = 0.45f
+            }
+            wave.addView(bar, android.widget.LinearLayout.LayoutParams(dp(5), dp(height)).apply {
+                leftMargin = dp(5)
+                rightMargin = dp(5)
+            })
+            ValueAnimator.ofFloat(0.35f, 1f).apply {
+                duration = (300L + index * 55L)
+                startDelay = index * 35L
+                repeatCount = ValueAnimator.INFINITE
+                repeatMode = ValueAnimator.REVERSE
+                interpolator = LinearInterpolator()
+                addUpdateListener { bar.scaleY = it.animatedValue as Float }
+                animators.add(this)
+                start()
+            }
+        }
+
+        val query = TextView(this).apply {
+            text = command.take(120)
+            setTextColor(Color.rgb(225, 233, 248))
+            textSize = 14f
+            gravity = Gravity.CENTER
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        root.addView(query, android.widget.LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(6) })
+
+        dialog.setContentView(root)
+        dialog.setCancelable(true)
+        dialog.setOnDismissListener {
+            animators.forEach { it.cancel() }
+        }
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setDimAmount(0.32f)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setLayout(LayoutParams.MATCH_PARENT, dp(300))
+            setGravity(Gravity.BOTTOM)
+        }
+        dialog.show()
+        dialog.window?.setLayout(LayoutParams.MATCH_PARENT, dp(300))
+        return dialog
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun enqueueStreamingSpeech(chunk: String) {
         if (chunk.isBlank()) return
