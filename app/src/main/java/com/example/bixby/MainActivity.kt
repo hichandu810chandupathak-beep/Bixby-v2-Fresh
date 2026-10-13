@@ -23,6 +23,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
+import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams
 import android.view.inputmethod.EditorInfo
