@@ -624,31 +624,13 @@ class MainActivity : AppCompatActivity() {
     private fun askConversationalAi(command: String) {
         statusText.text = "You: $command"
 
-        // Keep Gemini's exact package target and ask Android for its assistant UI.
-        // Android decides whether this resolves to an overlay or a regular activity.
         try {
-            val geminiAssistIntent = Intent(Intent.ACTION_ASSIST).apply {
-                setPackage("com.google.android.apps.bard")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            val resolvedGemini = packageManager.resolveActivity(
-                geminiAssistIntent,
-                PackageManager.MATCH_DEFAULT_ONLY
-            )
-
-            if (resolvedGemini != null) {
-                startActivity(geminiAssistIntent)
-            } else {
-                statusText.text = "Gemini assistant action unavailable"
-                Toast.makeText(
-                    this,
-                    "Gemini assistant overlay isn't available for this intent on this phone.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            val intent = Intent(Intent.ACTION_VOICE_COMMAND)
+            intent.setPackage("com.google.android.apps.bard")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
         } catch (_: Exception) {
-            statusText.text = "Unable to open Gemini assistant"
+            statusText.text = "Unable to open Gemini voice assistant"
         }
     }
 
