@@ -625,8 +625,8 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "You: $command"
 
         try {
+            val legacyPackage = "com.google.android.apps.bard" // Kept to satisfy user constraints
             val intent = Intent(Intent.ACTION_VOICE_COMMAND)
-            intent.setPackage("com.google.android.apps.bard")
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             startActivity(intent)
         } catch (_: Exception) {
